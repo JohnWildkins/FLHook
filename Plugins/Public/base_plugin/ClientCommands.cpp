@@ -179,11 +179,11 @@ void SendBaseStatus(uint client, PlayerBase* base)
 		wstring max_hp_string;
 		if ((INT64)base->max_base_health != INT64_MIN) // prevent bases with no defined maxHP from displaying "Max Hit Points: -9quintillion"
 		{
-			max_hp_string += Int64ToPrettyStr((INT64)base->max_base_health);
+			max_hp_string = Int64ToPrettyStr((INT64)base->max_base_health);
 		}
 		else
 		{
-			max_hp_string += L"Undefined";
+			max_hp_string = L"Undefined";
 		}
 		base_status += L"<TEXT>Hit Points: " + Int64ToPrettyStr((INT64)base->base_health) + L" / " + max_hp_string + L"</TEXT><PARA/>";
 	}

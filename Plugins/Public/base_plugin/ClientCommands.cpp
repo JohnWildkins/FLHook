@@ -176,7 +176,7 @@ void SendBaseStatus(uint client, PlayerBase* base)
 	base_status += L"<TEXT>Money: " + Int64ToPrettyStr(base->money) + L"</TEXT><PARA/>";
 	if (!base->invulnerable)
 	{
-		wstring max_hp_string = L"";
+		wstring max_hp_string;
 		if ((INT64)base->max_base_health != INT64_MIN) // prevent bases with no defined maxHP from displaying "Max Hit Points: -9quintillion"
 		{
 			max_hp_string += Int64ToPrettyStr((INT64)base->max_base_health);

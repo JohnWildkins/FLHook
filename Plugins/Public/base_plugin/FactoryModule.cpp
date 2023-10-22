@@ -64,9 +64,10 @@ wstring FactoryModule::GetInfo(bool xml)
 			if (gi)
 			{
 				info += openLine + L"- " + stows(itos(quantity)) + L"x " + HkGetWStringFromIDS(gi->iIDSName);
-				if (quantity > 0 && base->HasMarketItem(good) < active_recipe.cooking_rate)
+				uint has_quantity = base->HasMarketItem(good);
+				if (has_quantity < quantity)
 				{
-					info += L" [Out of stock]";
+					info += L" [Only " + UIntToPrettyStr(has_quantity) + L" units available]";
 				}
 			}
 		}

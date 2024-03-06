@@ -246,9 +246,6 @@ private:
 // /frelancer - gives the user a freelancer IFF
 bool UserCmd_FreelancerIFF(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
 {
-	pub::Player::AddCargo(iClientID, CreateID("shield02_mark10_hf"), 1, 1.0f, false);
-	IObjRW* obj = reinterpret_cast<IObjRW*>(HkGetInspect(iClientID));
-	obj->sub_6CE8F50(, )
 
 	if (!CheckIsInBase(iClientID))
 		return true;

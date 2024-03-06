@@ -62,11 +62,20 @@ wstring GetTimeString(bool bLocalTime);
 
 Vector MatrixToEuler(const Matrix& mat);
 Quaternion HkMatrixToQuaternion(Matrix m);
+Matrix TransposeMatrix(Matrix& m);
+float MatrixDeterminant(Matrix& m, uint row, uint col);
+Matrix MatrixDeterminateTable(Matrix& m);
+void MatrixCofactorsTable(Matrix& m);
+void MultiplyMatrix(Matrix& m, float num);
+Matrix InverseMatrix(Matrix& m1);
+Vector VectorMatrixMultiply(Vector& v1, Matrix& m1);
+Vector NormalizeVector(Vector& v);
 
 void FormatSendChat(uint iToClientID, const wstring &wscSender, const wstring &wscText, const wstring &wscTextColor);
 void ini_get_wstring(INI_Reader &ini, wstring &wscValue);
 void ini_write_wstring(FILE *file, const string &parmname, wstring &in);
 void PrintLocalUserCmdText(uint iClientID, const wstring &wscMsg, float fDistance);
+void PrintLocalMsgAroundObject(uint spaceObjId, const wstring& wscMsg, float fDistance);
 void SendGroupChat(uint iFromClientID, const wstring &wscText);
 void Rotate180(Matrix &rot);
 void TranslateX(Vector &pos, Matrix &rot, float x);
@@ -79,7 +88,7 @@ float degrees(float rad);
 CEqObj * __stdcall HkGetEqObjFromObjRW(struct IObjRW *objRW);
 
 void __stdcall HkLightFuse(IObjRW *ship, uint iFuseID, float fDelay, float fLifetime, float fSkip);
-void __stdcall HkUnLightFuse(IObjRW *ship, uint iFuseID, float fDunno);
+void __stdcall HkUnLightFuse(IObjRW *ship, uint iFuseID, float fDelay);
 
 #pragma pack(push, 1)
 struct SETEQUIPMENT_ITEM

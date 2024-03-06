@@ -17,12 +17,12 @@
 #include <list>
 #include <vector>
 #include <map>
+#include <unordered_map>
+#include <unordered_set>
 #include "flmap.h"
 
 #include "FLCoreDefs.h"
 #include "FLCoreCommon.h"
-#define ST6_ALLOCATION_DEFINED
-#include "st6.h"
 
 #pragma comment( lib, "FLCoreServer.lib" )
 
@@ -52,6 +52,13 @@ enum MissionMessageType
 	MissionMessageType_Type1, // objective
 	MissionMessageType_Type2, // objective
 	MissionMessageType_Type3, // mission success
+};
+
+struct SSPUseItem
+{
+	uint iUserShip;
+	ushort sItemId;
+	ushort sAmountUsed;
 };
 
 struct SSPMunitionCollisionInfo
@@ -93,21 +100,6 @@ struct XActivateThrusters
 	bool	bActivate;
 };
 
-struct XCollisionGroup
-{
-	ushort sId;
-	float fHealth;
-};
-
-struct XTractorObjects
-{
-	int iDunno[3];
-	// This points to the start of the array of space IDs
-	int *pArraySpaceID;
-	// This points to the end of the array of space IDs
-	int *pArraySpaceIDEnd;
-};
-
 struct SGFGoodSellInfo
 {
 	long	l1;
@@ -143,9 +135,17 @@ struct XSetManeuver
 struct XSetTarget
 {
 	uint iShip;
-	uint iSlot;
+	ushort iSlot;
 	uint iSpaceID;
-	uint iSubObjID;
+	ushort iSubObjID;
+};
+
+struct SSPObjUpdateInfoSimple
+{
+	uint iShip;
+	Quaternion vDir;
+	Vector vPos;
+	float fTimestamp;
 };
 
 struct SSPObjUpdateInfo
@@ -154,7 +154,6 @@ struct SSPObjUpdateInfo
 	Quaternion vDir;
 	Vector vPos;
 	double fTimestamp;
-	float fDunno;
 	float throttle;
 	char cState;
 };
@@ -162,8 +161,16 @@ struct SSPObjUpdateInfo
 struct XJettisonCargo
 {
 	uint iShip;
-	uint iSlot;
-	uint iCount;
+	ushort iSlot;
+	ushort dunno;
+	ushort iCount;
+};
+
+struct XTractorObjects
+{
+	uint shipId;
+	uint dunno;
+	st6::vector<uint> tractoredLootIds;
 };
 
 struct XGoTradelane
@@ -200,7 +207,7 @@ public:
 	void InitFromFolder(char const *);
 
 public:
-	uint iDunno1;
+	uint vftable;
 	wchar_t *wszAccID;
 	uint iDunno2[7];
 	CAccountListNode *pFirstListNode;
@@ -244,7 +251,6 @@ public:
 	void SetMissionObjectives(struct CMissionObjectives &);
 	void StoreMemberList(std::vector<unsigned int> &);
 
-protected:
 	static class std::map<unsigned int const, class CPlayerGroup *, struct std::less<unsigned int const>, class std::allocator<class CPlayerGroup *>>  s_GroupIDToGroupPtrMap;
 	static unsigned int  s_uiGroupID;
 
@@ -383,7 +389,7 @@ struct PlayerData {
 	long x240, x244, x248, x24C, x250, x254, x258, x25C, x260;
 	uint iShipArchetype;
 	float fRelativeHealth;
-	CollisionGroupDescList collisionGroupDesc;
+	st6::list<CollisionGroupDesc> collisionGroupDesc;
 	EquipDescList equipDescList;
 	int iRank;
 	int iMoneyNeededToNextRank;
@@ -937,7 +943,7 @@ namespace pub
 		IMPORT  int DockRequest(unsigned int const &, unsigned int const &);
 		IMPORT  int DrainShields(unsigned int);
 		IMPORT  int EnumerateCargo(unsigned int const &, struct pub::CargoEnumerator &);
-		IMPORT  int ExistsAndAlive(unsigned int);
+		IMPORT  int ExistsAndAlive(unsigned int); // returns 0 for alive, -2 for dead
 		IMPORT  int FormationResponse(unsigned int const &, enum FORMATION_RTYPE);
 		IMPORT  int GetArchetypeID(unsigned int const &, unsigned int &);
 		IMPORT  int GetAtmosphereRange(unsigned int const &, float &);

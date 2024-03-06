@@ -10,8 +10,9 @@
 #define __MAIN_H__ 1
 
 #include <FLHook.h>
+#include <unordered_set>
 
-void AddExceptionInfoLog(LPEXCEPTION_POINTERS pep);
+void AddExceptionInfoLog(struct SEHException* pep);
 #define LOG_EXCEPTION { AddLog("ERROR Exception in %s", __FUNCTION__); AddExceptionInfoLog(0); }
 
 int extern set_iPluginDebug;
@@ -19,7 +20,11 @@ bool extern set_bEnablePimpShip;
 bool extern set_bEnableRenameMe;
 bool extern set_bEnableMoveChar;
 bool extern set_bLocalTime;
+bool extern set_bEnableDeathMsg;
 float extern set_iLocalChatRange;
+unordered_set<uint> extern doNotDisturbClients;
+unordered_map<uint, float> extern jumpLimitMap;
+
 
 bool GetUserFilePath(string &path, const wstring &wscCharname, const string &extension);
 string GetUserFilePath(const wstring &wscCharname, const string &extension);
@@ -37,13 +42,6 @@ namespace pub
 	{
 		IMPORT int GetRank(unsigned int const &iClientID, int &iRank);
 	}
-}
-
-// From EquipmentUtilities.cpp
-namespace EquipmentUtilities
-{
-	void ReadIniNicknames();
-	const char *FindNickname(unsigned int hash);
 }
 
 // From PurchaseRestrictions
@@ -86,6 +84,7 @@ namespace MiscCmds
 	void BaseEnter(unsigned int iBaseID, unsigned int iClientID);
 	void CharacterInfoReq(unsigned int iClientID, bool p2);
 	void Timer();
+	void PlayerLaunch(uint client);
 
 	bool UserCmd_Pos(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_Stuck(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
@@ -141,32 +140,32 @@ namespace HyperJump
 {
 	void LoadSettings(const string &scPluginCfgFile);
 	void Timer();
+	void SystemSwitchOut(uint clientId, uint spaceObjId);
 	bool SystemSwitchOutComplete(unsigned int iShip, unsigned int iClientID);
-	void SendDeathMsg(const wstring &wscMsg, uint iSystem, uint iClientIDVictim, uint iClientIDKiller);
-	void ClearClientInfo(unsigned int iClientID);
+	void ClearClientInfo(uint iClientID);
 	void PlayerLaunch(unsigned int iShip, unsigned int iClientID);
-	void MissileTorpHit(uint iClientID, DamageList *dmg);
-	bool CheckForMatrix(uint iClientID);
+	void ExplosionHit(uint iClientID, DamageList *dmg);
+	bool CheckForBeacon(uint iClientID);
+	bool InitJumpDriveInfo(uint iClientID, bool fullCheck);
 	void ClientCloakCallback(CLIENT_CLOAK_STRUCT* info);
+	void SetJumpInFuse(uint iClientID);
+	void ForceJump(CUSTOM_JUMP_CALLOUT_STRUCT jumpData);
+	void SetJumpInPvPInvulnerability(uint iClientID);
+	bool Dock_Call(uint const& iShip, uint const& iDockTarget);
+	void JumpInComplete(uint ship);
+	void RequestCancel(int iType, uint iShip, uint dockObjId);
 
 	void AdminCmd_Chase(CCmds* cmds, const wstring &wscCharname);
 	bool AdminCmd_Beam(CCmds* cmds, const wstring &wscCharname, const wstring &wscTargetBaseName);
 	void AdminCmd_Pull(CCmds* cmds, const wstring &wscCharname);
 	void AdminCmd_Move(CCmds* cmds, float x, float y, float z);
 	//void AdminCmd_TestBot(CCmds* cmds, const wstring &wscSystemNick, int iCheckZoneTime);
-	void AdminCmd_JumpTest(CCmds* cmds, const wstring &fuse);
-	void AdminCmd_ListRestrictedShips(CCmds* cmds);
-	void AdminCmd_MakeCoord(CCmds* cmds);
-
-	bool UserCmd_Survey(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_SetCoords(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_ChargeJumpDrive(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_ActivateJumpDrive(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_DeployBeacon(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
+	bool UserCmd_IsSystemJumpable(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
+	bool UserCmd_SetSector(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
+	bool UserCmd_Jump(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_JumpBeacon(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_ListJumpableSystems(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-
-	void Disrupt(uint iTargetID, uint iClientID);
+	bool UserCmd_AcceptBeaconRequest(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage);
+	bool UserCmd_CanBeaconJumpToPlayer(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 }
 
 namespace PimpShip
@@ -231,10 +230,8 @@ namespace Message
 	void SetTarget(uint uClientID, struct XSetTarget const &p2);
 	bool SubmitChat(CHAT_ID cId, unsigned long p1, const void *rdl, CHAT_ID cIdTo, int p2);
 	bool HkCb_SendChat(uint iClientID, uint iTo, uint iSize, void *pRDL);
+	void DelayedDisconnect(uint client);
 
-	bool UserCmd_SaveCoords(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_ShowCoords(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_LoadCoords(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_SetMsg(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_ShowMsgs(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_SystemMsg(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
@@ -260,6 +257,7 @@ namespace Message
 	bool UserCmd_BuiltInCmdHelp(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_MailShow(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_MailDel(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
+	bool UserCmd_SetDoNotDisturb(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage);
 	void UserCmd_Process(uint iClientID, const wstring &wscCmd);
 
 	void AdminCmd_SendMail(CCmds *cmds, const wstring &wscCharname, const wstring &wscMsg);
@@ -278,8 +276,9 @@ namespace AntiJumpDisconnect
 	void ClearClientInfo(uint iClientID);
 	void DisConnect(unsigned int iClientID, enum  EFLConnection state);
 	void JumpInComplete(unsigned int iSystem, unsigned int iShip, unsigned int iClientID);
-	void SystemSwitchOutComplete(unsigned int iShip, unsigned int iClientID);
+	void SystemSwitchOut(uint iClientID);
 	void CharacterInfoReq(unsigned int iClientID, bool p2);
+	bool IsInWarp(uint iClientID);
 }
 
 
@@ -293,7 +292,7 @@ namespace SystemSensor
 	void JumpInComplete(unsigned int iSystem, unsigned int iShip, unsigned int iClientID);
 	void GoTradelane(unsigned int iClientID, struct XGoTradelane const &xgt);
 	void StopTradelane(unsigned int iClientID, unsigned int p1, unsigned int p2, unsigned int p3);
-	void Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget, int iCancel, enum DOCK_HOST_RESPONSE response);
+	void Dock_Call(uint const& typeID, uint clientId);
 }
 
 #endif

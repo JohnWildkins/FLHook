@@ -2,9 +2,9 @@
 
 PlayerBase::PlayerBase(uint client, const wstring &password, const wstring &the_basename)
 	: basename(the_basename),
-	base(0), money(0), base_health(0),
+	base(0), money(0), base_health(0), baseCSolar(nullptr),
 	base_level(1), defense_mode(0), proxy_base(0), affiliation(0), siege_mode(false),
-	repairing(false), shield_active_time(0), shield_state(PlayerBase::SHIELD_STATE_OFFLINE),
+	shield_timeout(0), isShieldOn(false), isFreshlyBuilt(true),
 	shield_strength_multiplier(base_shield_strength), damage_taken_since_last_threshold(0)
 {
 	nickname = CreateBaseNickname(wstos(basename));
@@ -14,8 +14,8 @@ PlayerBase::PlayerBase(uint client, const wstring &password, const wstring &the_
 	BasePassword bp;
 	bp.pass = password;
 	bp.admin = true;
-	passwords.push_back(bp);
-	ally_tags.push_back((const wchar_t*)Players.GetActiveCharacterName(client));
+	passwords.emplace_back(bp);
+	ally_tags.emplace_back((const wchar_t*)Players.GetActiveCharacterName(client));
 
 	// Setup the base in the current system and at the location 
 	// of the player. Rotate the base so that the docking ports
@@ -28,18 +28,17 @@ PlayerBase::PlayerBase(uint client, const wstring &password, const wstring &the_
 	TranslateX(position, rotation, 1000);
 
 	// Create the default module and spawn space obj.
-	modules.push_back((Module*)new CoreModule(this));
+	modules.emplace_back((Module*)new CoreModule(this));
 
 	// Setup derived fields
 	SetupDefaults();
 
-	save_timer = rand() % 60;
 }
 
 PlayerBase::PlayerBase(const string &the_path)
-	: path(the_path), base(0), money(0),
+	: path(the_path), base(0), money(0), baseCSolar(nullptr),
 	base_health(0), base_level(0), defense_mode(0), proxy_base(0), affiliation(0), siege_mode(false),
-	repairing(false), shield_active_time(0), shield_state(PlayerBase::SHIELD_STATE_OFFLINE),
+	shield_timeout(0), isShieldOn(false), isFreshlyBuilt(false),
 	shield_strength_multiplier(base_shield_strength), damage_taken_since_last_threshold(0)
 {
 	// Load and spawn base modules
@@ -48,7 +47,6 @@ PlayerBase::PlayerBase(const string &the_path)
 	// Setup derived fields
 	SetupDefaults();
 
-	save_timer = rand() % 60;
 }
 
 PlayerBase::~PlayerBase()
@@ -57,7 +55,7 @@ PlayerBase::~PlayerBase()
 	{
 		if (*i)
 		{
-			delete *i;
+			delete* i;
 		}
 	}
 }
@@ -72,19 +70,114 @@ void PlayerBase::Spawn()
 		}
 	}
 
+	if (mapArchs.count(basetype))
+	{
+		has_shield = mapArchs.at(basetype).hasShield;
+		siege_gun_only = mapArchs.at(basetype).siegeGunOnly;
+		use_vulnerability_window = mapArchs.at(basetype).vulnerabilityWindowUse;
+	}
+
 	SyncReputationForBase();
+}
+
+bool IsVulnerabilityWindowActive(BASE_VULNERABILITY_WINDOW window, int timeOfDay)
+{
+	return ((window.start < window.end
+			&& window.start <= timeOfDay && window.end > timeOfDay)
+		|| (window.start > window.end
+			&& (window.start <= timeOfDay || window.end > timeOfDay)));
+}
+
+void PlayerBase::CheckVulnerabilityWindow(uint currTime)
+{
+	int timeOfDay = (currTime % (3600 * 24)) / 60;
+	if (IsVulnerabilityWindowActive(vulnerabilityWindow1, timeOfDay))
+	{
+		if (!vulnerableWindowStatus)
+		{
+			//Reset the base defenses to default only on the opening of the first vulnerability window
+			siege_mode = true;
+			SyncReputationForBase();
+			shield_strength_multiplier = base_shield_strength;
+			damage_taken_since_last_threshold = 0;
+			if (shield_reinforcement_threshold_map.count(base_level))
+			{
+				base_shield_reinforcement_threshold = shield_reinforcement_threshold_map[base_level];
+			}
+			else
+			{
+				base_shield_reinforcement_threshold = FLT_MAX;
+			}
+		}
+		if (baseCSolar && base_health <= max_base_health)
+		{
+			baseCSolar->set_hit_pts(base_health);
+		}
+		vulnerableWindowStatus = true;
+	}
+	else if (!single_vulnerability_window && IsVulnerabilityWindowActive(vulnerabilityWindow2, timeOfDay))
+	{
+		if (!vulnerableWindowStatus)
+		{
+			if (baseCSolar && base_health <= max_base_health)
+			{
+				baseCSolar->set_hit_pts(base_health);
+			}
+			vulnerableWindowStatus = true;
+			siege_mode = true;
+			SyncReputationForBase();
+		}
+	}
+	else if (vulnerableWindowStatus)
+	{
+		if (baseCSolar && base_health <= max_base_health)
+		{
+			baseCSolar->set_hit_pts(base_health);
+		}
+		vulnerableWindowStatus = false;
+		siege_mode = false;
+		SyncReputationForBase();
+		LogDamageDealers();
+	}
+}
+
+void PlayerBase::LogDamageDealers()
+{
+	if (!damageTakenMap.empty())
+	{
+		string siegeMsg = wstos(basename) + "Damage taken: \n";
+		for (auto& item : damageTakenMap)
+		{
+			char buf[50];
+			sprintf(buf, "%s - %0.0f\n", wstos(item.first).c_str(), item.second);
+			siegeMsg += buf;
+		}
+		BaseLogging(siegeMsg.c_str());
+	}
 }
 
 // Dispatch timer to modules and exit immediately if the timer indicates
 // that this base has been deleted.
 bool PlayerBase::Timer(uint curr_time)
 {
-	for (uint i = 0; i < modules.size(); i++)
+	if (set_plugin_debug_special && (curr_time % 60 == 0))
 	{
-		Module *module = modules[i];
-		if (module)
+		AddLog("Started processing %s\n", wstos(this->basename).c_str());
+	}
+	if ((curr_time % set_tick_time) == 0 && logic)
+	{
+		reservedCatalystMap.clear();
+		reservedCatalystMap[set_base_crew_type] = base_level * 200;
+	}
+	if ((curr_time % 60) == 0 && !invulnerable)
+	{
+		this->CheckVulnerabilityWindow(curr_time);
+	}
+	for (Module* pobModule : modules)
+	{
+		if (pobModule)
 		{
-			bool is_deleted = module->Timer(curr_time);
+			bool is_deleted = pobModule->Timer(curr_time);
 			if (is_deleted)
 				return true;
 		}
@@ -94,9 +187,6 @@ bool PlayerBase::Timer(uint curr_time)
 
 void PlayerBase::SetupDefaults()
 {
-	// Resize the to appropriate number of modules.
-	modules.resize((base_level * 3) + 1);
-
 	// Calculate the hash of the nickname
 	if (!proxy_base)
 	{
@@ -116,7 +206,7 @@ void PlayerBase::SetupDefaults()
 		GetUserDataPath(datapath);
 
 		char tpath[1024];
-		sprintf(tpath, "%s\\Accts\\MultiPlayer\\player_bases\\base_%08x.ini", datapath, base);
+		sprintf(tpath, R"(%s\Accts\MultiPlayer\player_bases\base_%08x.ini)", datapath, base);
 		path = tpath;
 	}
 
@@ -124,9 +214,10 @@ void PlayerBase::SetupDefaults()
 	infocard.clear();
 	for (int i = 1; i <= MAX_PARAGRAPHS; i++)
 	{
-		wstring wscXML = infocard_para[i];
+		wstring& wscXML = infocard_para[i];
+
 		if (wscXML.length())
-			infocard += L"<TEXT>" + wscXML + L"</TEXT><PARA/><PARA/>";
+			infocard += L"<TEXT>" + ReplaceStr(wscXML, L"\n", L"</TEXT><PARA/><TEXT>") + L"</TEXT><PARA/><PARA/>";
 	}
 
 	// Validate the affiliation and clear it if there is no infocard
@@ -140,26 +231,38 @@ void PlayerBase::SetupDefaults()
 			affiliation = 0;
 		}
 	}
+
+	if (vulnerabilityWindow1.start == -1 || vulnerabilityWindow2.start == -1)
+	{
+		vulnerabilityWindow1 = { 10 * 60, ((10 * 60) + vulnerability_window_length) % (60 * 24) };
+		vulnerabilityWindow2 = { 20 * 60, ((20 * 60) + vulnerability_window_length) % (60 * 24) };
+	}
+	CheckVulnerabilityWindow(time(nullptr));
+
+	if (modules.size() < (base_level * 3) + 1)
+	{
+		modules.resize((base_level * 3) + 1);
+	}
+
+	RecalculateCargoSpace();
 }
 
 void PlayerBase::Load()
 {
 	INI_Reader ini;
+	BuildModule* coreConstruction = nullptr;
+	uint moduleCounter = 0;
+	modules.resize(1);
 	if (ini.open(path.c_str(), false))
 	{
 		while (ini.read_header())
 		{
 			if (ini.is_header("Base"))
 			{
-				int newsindex = 0;
 				int paraindex = 0;
-				destposition.x = 0;
-				destposition.y = 0;
-				destposition.z = 0;
 				invulnerable = 0;
 				logic = 1;
 				string defaultsystem = "iw09";
-				destsystem = CreateID(defaultsystem.c_str());
 
 				while (ini.read_value())
 				{
@@ -182,6 +285,7 @@ void PlayerBase::Load()
 					else if (ini.is_value("upgrade"))
 					{
 						base_level = ini.get_value_int(0);
+						modules.resize((base_level * 3) + 1);
 					}
 					else if (ini.is_value("affiliation"))
 					{
@@ -189,7 +293,16 @@ void PlayerBase::Load()
 					}
 					else if (ini.is_value("system"))
 					{
-						system = ini.get_value_int(0);
+						string sysNickname = ini.get_value_string(0);
+						uint systemId = Universe::get_system_id(sysNickname.c_str());
+						if (systemId)
+						{
+							system = systemId;
+						}
+						else
+						{
+							system = ini.get_value_int(0);
+						}
 					}
 					else if (ini.is_value("pos"))
 					{
@@ -205,9 +318,32 @@ void PlayerBase::Load()
 						erot.z = ini.get_value_float(2);
 						rotation = EulerMatrix(erot);
 					}
+					else if (ini.is_value("destobject"))
+					{
+						destObjectName = ini.get_value_string(0);
+						destObject = CreateID(destObjectName.c_str());
+					}
 					else if (ini.is_value("destsystem"))
 					{
-						destsystem = ini.get_value_int(0);
+						string sysNickname = ini.get_value_string(0);
+						uint systemId = Universe::get_system_id(sysNickname.c_str());
+						if (systemId)
+						{
+							destSystem = systemId;
+						}
+						else
+						{
+							destSystem = ini.get_value_int(0);
+						}
+					}
+					else if (ini.is_value("destpos"))
+					{
+						destPos = { ini.get_value_float(0), ini.get_value_float(1), ini.get_value_float(2) };
+					}
+					else if (ini.is_value("destori"))
+					{
+						Vector ori = { ini.get_value_float(0), ini.get_value_float(1), ini.get_value_float(2) };
+						destOri = EulerMatrix(ori);
 					}
 					else if (ini.is_value("logic"))
 					{
@@ -225,11 +361,14 @@ void PlayerBase::Load()
 					{
 						damage_taken_since_last_threshold = ini.get_value_float(0);
 					}
-					else if (ini.is_value("destposition"))
+					else if (ini.is_value("last_vulnerability_change"))
 					{
-						destposition.x = ini.get_value_float(0);
-						destposition.y = ini.get_value_float(1);
-						destposition.z = ini.get_value_float(2);
+						lastVulnerabilityWindowChange = ini.get_value_int(0);
+					}
+					else if (ini.is_value("vulnerability_windows"))
+					{
+						vulnerabilityWindow1 = { ini.get_value_int(0) * 60, ((ini.get_value_int(0) * 60) + vulnerability_window_length) % (60 * 24) };
+						vulnerabilityWindow2 = { ini.get_value_int(1) * 60, ((ini.get_value_int(1) * 60) + vulnerability_window_length) % (60 * 24) };
 					}
 					else if (ini.is_value("infoname"))
 					{
@@ -238,6 +377,12 @@ void PlayerBase::Load()
 					else if (ini.is_value("infocardpara"))
 					{
 						ini_get_wstring(ini, infocard_para[++paraindex]);
+					}
+					else if (ini.is_value("infocardpara2"))
+					{
+						wstring infopara2;
+						ini_get_wstring(ini, infopara2);
+						infocard_para[paraindex] += infopara2;
 					}
 					else if (ini.is_value("money"))
 					{
@@ -251,6 +396,7 @@ void PlayerBase::Load()
 						mi.price = ini.get_value_float(2);
 						mi.min_stock = ini.get_value_int(3);
 						mi.max_stock = ini.get_value_int(4);
+						mi.is_public = bool(ini.get_value_int(5));
 						market_items[good] = mi;
 					}
 					else if (ini.is_value("health"))
@@ -270,7 +416,7 @@ void PlayerBase::Load()
 					{
 						wstring tag;
 						ini_get_wstring(ini, tag);
-						ally_tags.push_back(tag);
+						ally_tags.emplace_back(tag);
 					}
 					else if (ini.is_value("hostile_tag"))
 					{
@@ -283,7 +429,7 @@ void PlayerBase::Load()
 					{
 						wstring tag;
 						ini_get_wstring(ini, tag);
-						perma_hostile_tags.push_back(tag);
+						perma_hostile_tags.insert(tag);
 					}
 					else if (ini.is_value("faction_ally_tag"))
 					{
@@ -306,7 +452,11 @@ void PlayerBase::Load()
 						else {
 							bp.admin = true;
 						}
-						passwords.push_back(bp);
+						passwords.emplace_back(bp);
+					}
+					else if (ini.is_value("crew_supplied"))
+					{
+						isCrewSupplied = ini.get_value_bool(0);
 					}
 				}
 				if (basetype.empty())
@@ -325,40 +475,50 @@ void PlayerBase::Load()
 			}
 			else if (ini.is_header("CoreModule"))
 			{
-				CoreModule *mod = new CoreModule(this);
+				CoreModule* mod = new CoreModule(this);
 				mod->LoadState(ini);
-				modules.push_back(mod);
+				modules.at(moduleCounter) = mod;
+				moduleCounter++;
 			}
 			else if (ini.is_header("BuildModule"))
 			{
-				BuildModule *mod = new BuildModule(this);
+				BuildModule* mod = new BuildModule(this);
 				mod->LoadState(ini);
-				modules.push_back(mod);
-			}
-			else if (ini.is_header("ShieldModule"))
-			{
-				ShieldModule *mod = new ShieldModule(this);
-				mod->LoadState(ini);
-				modules.push_back(mod);
+				if (mod->active_recipe.shortcut_number == Module::TYPE_CORE)
+				{
+					coreConstruction = mod;
+				}
+				else
+				{
+					modules.at(moduleCounter) = mod;
+					moduleCounter++;
+				}
 			}
 			else if (ini.is_header("StorageModule"))
 			{
-				StorageModule *mod = new StorageModule(this);
+				StorageModule* mod = new StorageModule(this);
 				mod->LoadState(ini);
-				modules.push_back(mod);
+				modules.at(moduleCounter) = mod;
+				moduleCounter++;
 			}
 			else if (ini.is_header("DefenseModule"))
 			{
-				DefenseModule *mod = new DefenseModule(this);
+				DefenseModule* mod = new DefenseModule(this);
 				mod->LoadState(ini);
-				modules.push_back(mod);
+				modules.at(moduleCounter) = mod;
+				moduleCounter++;
 			}
 			else if (ini.is_header("FactoryModule"))
 			{
-				FactoryModule *mod = new FactoryModule(this);
+				FactoryModule* mod = new FactoryModule(this);
 				mod->LoadState(ini);
-				modules.push_back(mod);
+				modules.at(moduleCounter) = mod;
+				moduleCounter++;
 			}
+		}
+		if (coreConstruction)
+		{
+			modules.emplace_back(coreConstruction);
 		}
 		ini.close();
 	}
@@ -366,7 +526,7 @@ void PlayerBase::Load()
 
 void PlayerBase::Save()
 {
-	FILE *file = fopen(path.c_str(), "w");
+	FILE* file = fopen(path.c_str(), "w");
 	if (file)
 	{
 		fprintf(file, "[Base]\n");
@@ -378,37 +538,57 @@ void PlayerBase::Save()
 		fprintf(file, "affiliation = %u\n", affiliation);
 		fprintf(file, "logic = %u\n", logic);
 		fprintf(file, "invulnerable = %u\n", invulnerable);
+		fprintf(file, "crew_supplied = %u\n", isCrewSupplied ? 1 : 0);
 		fprintf(file, "shieldstrength = %f\n", shield_strength_multiplier);
 		fprintf(file, "shielddmgtaken = %f\n", damage_taken_since_last_threshold);
+		fprintf(file, "last_vulnerability_change = %u\n", lastVulnerabilityWindowChange);
+		fprintf(file, "vulnerability_windows = %u, %u\n", vulnerabilityWindow1.start / 60, vulnerabilityWindow2.start / 60);
 
 		fprintf(file, "money = %I64d\n", money);
-		fprintf(file, "system = %u\n", system);
+		auto sysInfo = Universe::get_system(system);
+		fprintf(file, "system = %s\n", sysInfo->nickname);
 		fprintf(file, "pos = %0.0f, %0.0f, %0.0f\n", position.x, position.y, position.z);
-
-		fprintf(file, "destsystem = %u\n", destsystem);
-		fprintf(file, "destposition = %0.0f, %0.0f, %0.0f\n", destposition.x, destposition.y, destposition.z);
 
 		Vector vRot = MatrixToEuler(rotation);
 		fprintf(file, "rot = %0.0f, %0.0f, %0.0f\n", vRot.x, vRot.y, vRot.z);
+		if (mapArchs[basetype].ishubreturn)
+		{
+			const auto& destSystemInfo = Universe::get_system(destSystem);
+			fprintf(file, "destsystem = %s\n", destSystemInfo->nickname);
+
+			fprintf(file, "destpos = %0.0f, %0.0f, %0.0f\n", destPos.x, destPos.y, destPos.z);
+
+			Vector destRot = MatrixToEuler(destOri);
+			fprintf(file, "destori = %0.0f, %0.0f, %0.0f\n", destRot.x, destRot.y, destRot.z);
+		}
+		else if (mapArchs[basetype].isjump && destObject && pub::SpaceObj::ExistsAndAlive(destObject) == 0) //0 means alive, -2 dead
+		{
+			uint destSystemId;
+			pub::SpaceObj::GetSystem(destObject, destSystemId);
+			const auto& destSystemInfo = Universe::get_system(destSystemId);
+			fprintf(file, "destsystem = %s\n", destSystemInfo->nickname);
+			fprintf(file, "destobject = %s\n", destObjectName.c_str());
+		}
 
 		ini_write_wstring(file, "infoname", basename);
 		for (int i = 1; i <= MAX_PARAGRAPHS; i++)
 		{
-			ini_write_wstring(file, "infocardpara", infocard_para[i]);
+			ini_write_wstring(file, "infocardpara", infocard_para[i].substr(0, 252));
+			if (infocard_para[i].length() >= 252)
+				ini_write_wstring(file, "infocardpara2", infocard_para[i].substr(252, 252));
 		}
-		for (map<UINT, MARKET_ITEM>::iterator i = market_items.begin();
-			i != market_items.end(); ++i)
+		for (auto i : market_items)
 		{
-			fprintf(file, "commodity = %u, %u, %f, %u, %u\n",
-				i->first, i->second.quantity, i->second.price, i->second.min_stock, i->second.max_stock);
+			fprintf(file, "commodity = %u, %u, %f, %u, %u, %u\n",
+				i.first, i.second.quantity, i.second.price, i.second.min_stock, i.second.max_stock, int(i.second.is_public));
 		}
 
 		fprintf(file, "defensemode = %u\n", defense_mode);
-		foreach(ally_tags, wstring, i)
+		for(auto& i : ally_tags)
 		{
-			ini_write_wstring(file, "ally_tag", *i);
+			ini_write_wstring(file, "ally_tag", i);
 		}
-		for(auto i : ally_factions)
+		for (auto i : ally_factions)
 		{
 			fprintf(file, "faction_ally_tag = %d\n", i);
 		}
@@ -416,20 +596,16 @@ void PlayerBase::Save()
 		{
 			fprintf(file, "faction_hostile_tag = %d\n", i);
 		}
-		for (map<wstring, wstring>::iterator i = hostile_tags.begin();
-			i != hostile_tags.end(); ++i)
+		for(auto i : perma_hostile_tags)
 		{
-			ini_write_wstring(file, "hostile_tag", (wstring&)i->first);
-		}
-		foreach(perma_hostile_tags, wstring, i)
-		{
-			ini_write_wstring(file, "perma_hostile_tag", *i);
+			ini_write_wstring(file, "perma_hostile_tag", i);
 		}
 		foreach(passwords, BasePassword, i)
 		{
 			BasePassword bp = *i;
 			wstring l = bp.pass;
-			if (!bp.admin && bp.viewshop) {
+			if (!bp.admin && bp.viewshop)
+			{
 				l += L" viewshop";
 			}
 			ini_write_wstring(file, "passwd", l);
@@ -453,11 +629,19 @@ void PlayerBase::Save()
 
 bool PlayerBase::AddMarketGood(uint good, uint quantity)
 {
+	if (quantity == 0)
+	{
+		return true;
+	}
+
 	float vol, mass;
 	pub::GetGoodProperties(good, vol, mass);
 
-	if (GetRemainingCargoSpace() < (quantity * vol))
+	if (GetRemainingCargoSpace() < (quantity * vol)
+		|| (market_items.count(good) && market_items[good].max_stock < market_items[good].quantity + quantity))
+	{
 		return false;
+	}
 
 	market_items[good].quantity += quantity;
 	SendMarketGoodUpdated(this, good, market_items[good]);
@@ -466,13 +650,10 @@ bool PlayerBase::AddMarketGood(uint good, uint quantity)
 
 void PlayerBase::RemoveMarketGood(uint good, uint quantity)
 {
-	map<uint, MARKET_ITEM>::iterator iter = market_items.find(good);
+	auto iter = market_items.find(good);
 	if (iter != market_items.end())
 	{
-		if (iter->second.quantity <= quantity)
-			iter->second.quantity = 0;
-		else
-			iter->second.quantity -= quantity;
+		iter->second.quantity = max(0, iter->second.quantity - quantity);
 		SendMarketGoodUpdated(this, good, iter->second);
 	}
 }
@@ -481,48 +662,52 @@ void PlayerBase::ChangeMoney(INT64 the_money)
 {
 	money += the_money;
 	if (money < 0)
+	{
 		money = 0;
+	}
 }
 
 uint PlayerBase::GetRemainingCargoSpace()
 {
 	uint used = 0;
-	for (map<UINT, MARKET_ITEM>::iterator i = market_items.begin(); i != market_items.end(); ++i)
+	for (auto i = market_items.begin(); i != market_items.end(); ++i)
 	{
 		float vol, mass;
 		pub::GetGoodProperties(i->first, vol, mass);
 		used += (uint)((float)i->second.quantity * vol);
 	}
 
-	if (used > GetMaxCargoSpace())
+	if (used > storage_space)
+	{
 		return 0;
-
-	return GetMaxCargoSpace() - used;
+	}
+	return storage_space - used;
 }
 
-uint PlayerBase::GetMaxCargoSpace()
+void PlayerBase::RecalculateCargoSpace()
 {
-	uint max_capacity = 30000;
-	for (vector<Module*>::iterator i = modules.begin(); i != modules.end(); ++i)
+	storage_space = 0;
+	for (Module* mod : modules)
 	{
-		if ((*i) && (*i)->type == Module::TYPE_STORAGE)
+		if (mod)
 		{
-			max_capacity += STORAGE_MODULE_CAPACITY;
+			storage_space += mod->cargoSpace;
 		}
 	}
-	return max_capacity;
 }
 
-string PlayerBase::CreateBaseNickname(const string &basename)
+string PlayerBase::CreateBaseNickname(const string& basename)
 {
 	return string("pb_") + basename;
 }
 
 uint PlayerBase::HasMarketItem(uint good)
 {
-	map<UINT, MARKET_ITEM>::iterator i = market_items.find(good);
+	auto i = market_items.find(good);
 	if (i != market_items.end())
+	{
 		return i->second.quantity;
+	}
 	return 0;
 }
 
@@ -533,21 +718,20 @@ float PlayerBase::GetAttitudeTowardsClient(uint client, bool emulated_siege_mode
 	float attitude = -1.0;
 	wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
 
-	
 	// Make base hostile if player is on the perma hostile list. First check so it overrides everything.
 	if (siege_mode || emulated_siege_mode)
-		for (std::list<wstring>::const_iterator i = perma_hostile_tags.begin(); i != perma_hostile_tags.end(); ++i)
+		for (auto& i : perma_hostile_tags)
 		{
-			if (charname.find(*i) == 0)
+			if (charname.find(i) == 0)
 			{
 				return -1.0;
 			}
 		}
 
 	// Make base friendly if player is on the friendly list.
-	for (std::list<wstring>::const_iterator i = ally_tags.begin(); i != ally_tags.end(); ++i)
+	for (auto& i : ally_tags)
 	{
-		if (charname.find(*i) == 0)
+		if (charname.find(i) == 0)
 		{
 			return 1.0;
 		}
@@ -590,9 +774,13 @@ float PlayerBase::GetAttitudeTowardsClient(uint client, bool emulated_siege_mode
 
 			// if in siege mode, return true affiliation, otherwise clamp to minimum neutralNoDock rep
 			if (siege_mode || emulated_siege_mode)
+			{
 				return attitude;
+			}
 			else
+			{
 				return max(-0.59f, attitude);
+			}
 		}
 	}
 
@@ -604,7 +792,7 @@ float PlayerBase::GetAttitudeTowardsClient(uint client, bool emulated_siege_mode
 // of this base.
 void PlayerBase::SyncReputationForBase()
 {
-	struct PlayerData *pd = 0;
+	struct PlayerData* pd = nullptr;
 	while (pd = Players.traverse_active(pd))
 	{
 		if (pd->iShipID && pd->iSystemID == system)
@@ -612,11 +800,11 @@ void PlayerBase::SyncReputationForBase()
 			int player_rep;
 			pub::SpaceObj::GetRep(pd->iShipID, player_rep);
 			float attitude = GetAttitudeTowardsClient(pd->iOnlineID);
-			for (vector<Module*>::iterator i = modules.begin(); i != modules.end(); ++i)
+			for (auto& i : modules)
 			{
-				if (*i)
+				if (i)
 				{
-					(*i)->SetReputation(player_rep, attitude);
+					i->SetReputation(player_rep, attitude);
 				}
 			}
 		}
@@ -661,117 +849,30 @@ void ReportAttack(wstring basename, wstring charname, uint system, wstring alert
 	string scText = wstos(wscMsgLog);
 	BaseLogging("%s", scText.c_str());
 
-	/*
-
-	struct PlayerData *pPD = 0;
-	while(pPD = Players.traverse_active(pPD))
-	{
-	uint iClientsID = HkGetClientIdFromPD(pPD);
-
-	//HkFMsg(iClientsID, wscMsg);
-
-	//wstring msg = L"%base% is under attack!";
-	//msg = ReplaceStr(msg, L"%base%", this->basename.c_str());
-	}
-	*/
 	return;
 }
 
-// For all players in the base's system, resync their reps towards all objects
-// of this base.
-void PlayerBase::SiegeModChainReaction(uint client)
-{
-	map<uint, PlayerBase*>::iterator it;
-	for (it = player_bases.begin(); it != player_bases.end(); it++)
-	{
-		if (it->second->system == this->system)
-		{
-			if (HkDistance3D(it->second->position, this->position) < siege_mode_chain_reaction_trigger_distance)
-			{
-				if (!(it->second->siege_mode))
-				{
-					float attitude = it->second->GetAttitudeTowardsClient(client, true);
-					if (attitude < -0.55f)
-					{
-						it->second->siege_mode = true;
-
-						const wstring& charname = (const wchar_t*)Players.GetActiveCharacterName(client);
-						ReportAttack(it->second->basename, charname, it->second->system, L"has detected hostile activity at a nearby base by");
-
-						it->second->SyncReputationForBase();
-					}
-				}
-			}
-		}
-	}
-}
-
 // Return true if 
-float PlayerBase::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints)
+void PlayerBase::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints)
 {
-	float incoming_damage = curr_hitpoints - new_hitpoints;
+	if (invulnerable)
+	{
+		return;
+	}
 
 	// Make sure that the attacking player is hostile.
 	uint client = HkGetClientIDByShip(attacking_space_obj);
-	if (client)
+	if (!client)
 	{
-		const wstring &charname = (const wchar_t*)Players.GetActiveCharacterName(client);
-		last_attacker = charname;
-
-		if (hostile_tags_damage.find(charname) == hostile_tags_damage.end())
-			hostile_tags_damage[charname] = 0;
-
-		hostile_tags_damage[charname] += incoming_damage;
-
-		// Allies are allowed to shoot at the base without the base becoming hostile. We do the ally search
-		// after checking to see if this player is on the hostile list because allies don't normally
-		// shoot at bases and so this is more efficient than searching the ally list first.
-		if (hostile_tags.find(charname) == hostile_tags.end())
-		{
-			bool is_ally = false;
-			for (list<wstring>::iterator i = ally_tags.begin(); i != ally_tags.end(); ++i)
-			{
-				if (charname.find(*i) == 0)
-				{
-					is_ally = true;
-					break;
-				}
-			}
-
-			if (!is_ally && (hostile_tags_damage[charname]) > damage_threshold)
-			{
-				hostile_tags[charname] = charname;
-
-				const wstring& charname = (const wchar_t*)Players.GetActiveCharacterName(client);
-				ReportAttack(this->basename, charname, this->system, L"has activated self-defense against");
-
-				SyncReputationForBase();
-
-				if (siege_mode)
-					SiegeModChainReaction(client);
-			}
-		}
-
-		if (!siege_mode && (hostile_tags_damage[charname]) > siege_mode_damage_trigger_level)
-		{
-			const wstring& charname = (const wchar_t*)Players.GetActiveCharacterName(client);
-			ReportAttack(this->basename, charname, this->system, L"siege mode triggered by");
-
-			siege_mode = true;
-			SiegeModChainReaction(client);
-		}
+		return;
 	}
+	const wstring& charname = (const wchar_t*)Players.GetActiveCharacterName(client);
 
-	// If the shield is not active but could be set a time 
-	// to request that it is activated.
-	if (!this->shield_active_time && this->shield_state == SHIELD_STATE_ONLINE)
+	if (!hostile_tags.count(charname))
 	{
-		const wstring &charname = (const wchar_t*)Players.GetActiveCharacterName(client);
+		hostile_tags.insert(charname);
 		ReportAttack(this->basename, charname, this->system);
-		this->shield_active_time = 60 + (rand() % 512);
-		if (set_plugin_debug > 1)
-			ConPrint(L"PlayerBase::damaged shield active=%u\n", this->shield_active_time);
 	}
 
-	return 0.0f;
+	damageTakenMap[charname] += curr_hitpoints - new_hitpoints;
 }

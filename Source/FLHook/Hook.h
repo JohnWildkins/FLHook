@@ -9,9 +9,26 @@
 #include "flcodec.h"
 
 #include <plugin.h>
+#include <unordered_map>
+#include <chrono>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // defines
+
+#define CORE_TIMER_LOGGING
+
+#ifdef CORE_TIMER_LOGGING
+#define LOG_CORE_TIMER_START \
+auto& timeStart = std::chrono::high_resolution_clock::now();
+#define LOG_CORE_TIMER_END \
+if(set_corePerfTimerLength) {auto& timeEnd = std::chrono::high_resolution_clock::now(); \
+coreExecutionMap[__FUNCTION__].emplace_back(std::chrono::duration_cast<std::chrono::microseconds>(timeEnd-timeStart).count());}
+#else
+#define LOG_CORE_TIMER_START
+#define LOG_CORE_TIMER_END
+#endif
+
+#define HOOK_TIMER_LOGGING
 
 #define HKHKSUCCESS(a) ((a) == HKE_OK)
 #define HKSUCCESS(a) ((hkLastErr = (a)) == HKE_OK)
@@ -62,7 +79,6 @@
 #define ADDR_COMMON_VFTABLE_MUNITION 0x139CE8
 #define ADDR_COMMON_VFTABLE_ENGINE 0x139AAC
 
-
 #define HK_GET_CLIENTID(a, b) \
 	bool bIdString = false; \
 	if(b.find(L"id ") == 0) bIdString = true; \
@@ -87,11 +103,35 @@
 
 #define EXTENDED_EXCEPTION_LOGGING
 #ifdef EXTENDED_EXCEPTION_LOGGING
-EXPORT extern void WriteMiniDump(LPEXCEPTION_POINTERS pep);
-EXPORT extern void AddExceptionInfoLog(LPEXCEPTION_POINTERS pep);
+struct SEHException
+{
+	SEHException(uint code, EXCEPTION_POINTERS* ep)
+		: code(code), record(*ep->ExceptionRecord), context(*ep->ContextRecord)
+	{
+	}
+
+	uint code;
+	EXCEPTION_RECORD record;
+	CONTEXT context;
+
+	static void Translator(uint code, EXCEPTION_POINTERS* ep)
+	{
+		throw SEHException(code, ep);
+	}
+};
+
+EXPORT extern void WriteMiniDump(SEHException * ex);
+EXPORT extern void AddExceptionInfoLog(SEHException * ex);
+//#define LOG_EXCEPTION { AddLog("ERROR: Exception in %s", __FUNCTION__); AddExceptionInfoLog(0); }
+#define TRY_HOOK try { _set_se_translator(SEHException::Translator);
+#define CATCH_HOOK(e) } \
+catch(SEHException& ex) { e; AddBothLog("ERROR: SEH Exception in %s on line %d; minidump may contain more information.", __FUNCTION__, __LINE__); AddExceptionInfoLog(&ex); } \
+catch(std::exception& ex) { e; AddBothLog("ERROR: STL Exception in %s on line %d: %s.", __FUNCTION__, __LINE__, ex.what()); AddExceptionInfoLog(0); } \
+catch (...) { e; AddBothLog("ERROR: Exception in %s on line %d.", __FUNCTION__, __LINE__); AddExceptionInfoLog(0); }
 #define LOG_EXCEPTION { AddLog("ERROR: Exception in %s", __FUNCTION__); AddExceptionInfoLog(0); }
 #else
-#define LOG_EXCEPTION { AddLog("ERROR: Exception in %s", __FUNCTION__); }
+#define TRY_HOOK try
+#define CATCH_HOOK(e) catch(...) { e; AddLog("ERROR: Exception in %s", __FUNCTION__); }
 #endif
 
 
@@ -148,22 +188,25 @@ struct PLUGIN_SORTCRIT {
 
 
 
+#ifdef HOOK_TIMER_LOGGING
 #define CALL_PLUGINS(callback_id,ret_type,calling_convention,arg_types,args) \
 { \
+	auto timeStart = std::chrono::high_resolution_clock::now();\
 	ret_type vPluginRet; \
 	bool bPluginReturn = false; \
 	g_bPlugin_nofunctioncall = false; \
-	try { \
+	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
 			if(itplugin->bPaused) \
 				continue; \
 			if(itplugin->pFunc) { \
-				CTimer timer(itplugin->sPluginFunction,set_iTimerThreshold); \
-				timer.start(); \
-				try { \
+				auto timeHookStart = std::chrono::high_resolution_clock::now();\
+				TRY_HOOK { \
 					vPluginRet = ((ret_type (calling_convention*) arg_types )itplugin->pFunc) args; \
-				} catch(...) { AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__); LOG_EXCEPTION } \
-				timer.stop(); \
+				} CATCH_HOOK({ AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__);}) \
+				if(set_hookPerfTimerLength && set_perfTimedHookName == __FUNCTION__) \
+					{auto timeHookEnd = std::chrono::high_resolution_clock::now(); \
+					AddPerfTimer("%s %s %u", __FUNCTION__, itplugin->sName.c_str(), std::chrono::duration_cast<std::chrono::microseconds>(timeHookEnd - timeHookStart).count());}\
 			} else  \
 				AddLog("ERROR: Plugin '%s' does not export %s [%s]", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
 			if(*itplugin->ePluginReturnCode == SKIPPLUGINS_NOFUNCTIONCALL) { \
@@ -175,7 +218,9 @@ struct PLUGIN_SORTCRIT {
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
-	} catch(...) { AddLog("ERROR: Exception %s", __FUNCTION__); LOG_EXCEPTION } \
+		auto timeEnd = std::chrono::high_resolution_clock::now();\
+		if(set_logPerfTimers) AddPerfTimer("%s %u", __FUNCTION__, std::chrono::duration_cast<std::chrono::microseconds>(timeEnd-timeStart).count()); \
+	} CATCH_HOOK({ AddLog("ERROR: Exception %s", __FUNCTION__);}) \
 	if(bPluginReturn) \
 		return vPluginRet; \
 } \
@@ -185,17 +230,19 @@ struct PLUGIN_SORTCRIT {
 { \
 	bool bPluginReturn = false; \
 	g_bPlugin_nofunctioncall = false; \
-	try { \
+	auto timeStart = std::chrono::high_resolution_clock::now();\
+	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
 			if(itplugin->bPaused) \
 				continue; \
 			if(itplugin->pFunc) { \
-				CTimer timer(itplugin->sPluginFunction,set_iTimerThreshold); \
-				timer.start(); \
-				try { \
+				auto timeHookStart = std::chrono::high_resolution_clock::now();\
+				TRY_HOOK { \
 					((void (calling_convention*) arg_types )itplugin->pFunc) args; \
-				} catch(...) { AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__); LOG_EXCEPTION } \
-				timer.stop(); \
+				} CATCH_HOOK ({ AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__); } ) \
+				if(set_hookPerfTimerLength && set_perfTimedHookName == __FUNCTION__) \
+					{auto timeHookEnd = std::chrono::high_resolution_clock::now(); \
+					AddPerfTimer("%s %s %u", __FUNCTION__, itplugin->sName.c_str(), std::chrono::duration_cast<std::chrono::microseconds>(timeHookEnd - timeHookStart).count());}\
 			} else  \
 				AddLog("ERROR: Plugin '%s' does not export %s [%s]", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
 			if(*itplugin->ePluginReturnCode == SKIPPLUGINS_NOFUNCTIONCALL) { \
@@ -207,7 +254,9 @@ struct PLUGIN_SORTCRIT {
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
-	} catch(...) { AddLog("ERROR: Exception %s", __FUNCTION__); LOG_EXCEPTION } \
+		auto timeEnd = std::chrono::high_resolution_clock::now();\
+		if(set_logPerfTimers) AddPerfTimer("%s %u", __FUNCTION__, std::chrono::duration_cast<std::chrono::microseconds>(timeEnd-timeStart).count()); \
+	} CATCH_HOOK({ AddLog("ERROR: Exception %s", __FUNCTION__); } ) \
 	if(bPluginReturn) \
 		return; \
 } \
@@ -216,17 +265,19 @@ struct PLUGIN_SORTCRIT {
 #define CALL_PLUGINS_NORET(callback_id,calling_convention,arg_types,args) \
 { \
 	g_bPlugin_nofunctioncall = false; \
-	try { \
+	auto timeStart = std::chrono::high_resolution_clock::now();\
+	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
 			if(itplugin->bPaused) \
 				continue; \
 			if(itplugin->pFunc) { \
-				CTimer timer(itplugin->sPluginFunction,set_iTimerThreshold); \
-				timer.start(); \
-				try { \
+				auto timeHookStart = std::chrono::high_resolution_clock::now();\
+				TRY_HOOK { \
 					((void (calling_convention*) arg_types )itplugin->pFunc) args; \
-				} catch(...) { AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__); LOG_EXCEPTION } \
-				timer.stop(); \
+				} CATCH_HOOK({ AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__); } ) \
+				if(set_hookPerfTimerLength && set_perfTimedHookName == __FUNCTION__) \
+					{auto timeHookEnd = std::chrono::high_resolution_clock::now(); \
+					AddPerfTimer("%s %s %u", __FUNCTION__, itplugin->sName.c_str(), std::chrono::duration_cast<std::chrono::microseconds>(timeHookEnd - timeHookStart).count());}\
 			} else  \
 				AddLog("ERROR: Plugin '%s' does not export %s [%s]", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
 			if(*itplugin->ePluginReturnCode == SKIPPLUGINS_NOFUNCTIONCALL) { \
@@ -238,8 +289,99 @@ struct PLUGIN_SORTCRIT {
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
-	} catch(...) { AddLog("ERROR: Exception %s", __FUNCTION__); LOG_EXCEPTION } \
+		auto timeEnd = std::chrono::high_resolution_clock::now();\
+		if(set_logPerfTimers) AddPerfTimer("%s %u", __FUNCTION__, std::chrono::duration_cast<std::chrono::microseconds>(timeEnd-timeStart).count()); \
+	} CATCH_HOOK ({ AddLog("ERROR: Exception %s", __FUNCTION__); } ) \
 } \
+
+#else
+// ------------------------------------------------------------------------------------------------------------
+
+#define CALL_PLUGINS(callback_id,ret_type,calling_convention,arg_types,args) \
+{ \
+	ret_type vPluginRet; \
+	bool bPluginReturn = false; \
+	g_bPlugin_nofunctioncall = false; \
+	TRY_HOOK { \
+		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
+			if(itplugin->bPaused) \
+				continue; \
+			if(itplugin->pFunc) { \
+				TRY_HOOK { \
+					vPluginRet = ((ret_type (calling_convention*) arg_types )itplugin->pFunc) args; \
+				} CATCH_HOOK({ AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__);}) \
+			} else  \
+				AddLog("ERROR: Plugin '%s' does not export %s [%s]", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
+			if(*itplugin->ePluginReturnCode == SKIPPLUGINS_NOFUNCTIONCALL) { \
+				bPluginReturn = true; \
+				break; \
+			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
+				bPluginReturn = true; \
+				g_bPlugin_nofunctioncall = true; \
+			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
+				break; \
+		} \
+	} CATCH_HOOK({ AddLog("ERROR: Exception %s", __FUNCTION__);}) \
+	if(bPluginReturn) \
+		return vPluginRet; \
+} \
+
+// same for void types, not really seeing a way to integrate it in 1st macro :(
+#define CALL_PLUGINS_V(callback_id,calling_convention,arg_types,args) \
+{ \
+	bool bPluginReturn = false; \
+	g_bPlugin_nofunctioncall = false; \
+	TRY_HOOK { \
+		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
+			if(itplugin->bPaused) \
+				continue; \
+			if(itplugin->pFunc) { \
+				TRY_HOOK { \
+					((void (calling_convention*) arg_types )itplugin->pFunc) args; \
+				} CATCH_HOOK ({ AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__); } ) \
+			} else  \
+				AddLog("ERROR: Plugin '%s' does not export %s [%s]", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
+			if(*itplugin->ePluginReturnCode == SKIPPLUGINS_NOFUNCTIONCALL) { \
+				bPluginReturn = true; \
+				break; \
+			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
+				bPluginReturn = true; \
+				g_bPlugin_nofunctioncall = true; \
+			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
+				break; \
+		} \
+	} CATCH_HOOK({ AddLog("ERROR: Exception %s", __FUNCTION__); } ) \
+	if(bPluginReturn) \
+		return; \
+} \
+
+// extra macro for plugin calls where we dont care about or dont allow returning
+#define CALL_PLUGINS_NORET(callback_id,calling_convention,arg_types,args) \
+{ \
+	g_bPlugin_nofunctioncall = false; \
+	TRY_HOOK { \
+		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
+			if(itplugin->bPaused) \
+				continue; \
+			if(itplugin->pFunc) { \
+				TRY_HOOK { \
+					((void (calling_convention*) arg_types )itplugin->pFunc) args; \
+				} CATCH_HOOK({ AddLog("ERROR: Exception in plugin '%s' in %s", itplugin->sName.c_str(), __FUNCTION__); } ) \
+			} else  \
+				AddLog("ERROR: Plugin '%s' does not export %s [%s]", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
+			if(*itplugin->ePluginReturnCode == SKIPPLUGINS_NOFUNCTIONCALL) { \
+				AddLog("ERROR: Plugin '%s' wants to suppress function call in %s [%s] - denied!", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
+				break; \
+			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
+				AddLog("ERROR: Plugin '%s' wants to suppress function call in %s [%s] - denied!", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
+				g_bPlugin_nofunctioncall = true; \
+			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
+				break; \
+		} \
+	} CATCH_HOOK ({ AddLog("ERROR: Exception %s", __FUNCTION__); } ) \
+} \
+
+#endif
 
 typedef PLUGIN_RETURNCODE(*PLUGIN_Get_PluginReturnCode)();
 typedef PLUGIN_INFO* (*PLUGIN_Get_PluginInfo)();
@@ -300,10 +442,11 @@ enum HK_ERROR
 
 enum DIEMSGTYPE
 {
-	DIEMSG_ALL = 0,
+	DIEMSG_ALL_NOCONN = 0,
 	DIEMSG_SYSTEM = 1,
 	DIEMSG_NONE = 2,
 	DIEMSG_SELF = 3,
+	DIEMSG_ALL = 4,
 };
 
 enum CHATSIZE
@@ -377,7 +520,7 @@ struct MONEY_FIX
 	wstring		wscCharname;
 	int			iAmount;
 
-	bool operator==(MONEY_FIX mf1)
+	bool operator==(const MONEY_FIX& mf1) const
 	{
 		if (!wscCharname.compare(mf1.wscCharname))
 			return true;
@@ -398,9 +541,10 @@ struct CLIENT_INFO
 	// kill msgs
 	uint		iShip;
 	uint		iShipOld;
-	mstime		tmSpawnTime;
+	mstime		tmProtectedUntil;
 
-	DamageList	dmgLast;
+	uint dmgLastPlayerId;
+	DamageCause dmgLastCause;
 
 	// money cmd
 	list<MONEY_FIX> lstMoneyFix;
@@ -461,7 +605,8 @@ struct CLIENT_INFO
 
 	bool		bSpawnProtected;
 	bool		bUseServersideHitDetection; //used by AC Plugin
-	byte		unused_data[128];
+	CShip*		cship;
+	char		unused_data[128];
 };
 
 // taken from directplay
@@ -612,6 +757,7 @@ EXPORT HK_ERROR HkKick(const wstring &wscCharname);
 EXPORT HK_ERROR HkKickReason(const wstring &wscCharname, const wstring &wscReason);
 EXPORT HK_ERROR HkBan(const wstring &wscCharname, bool bBan);
 EXPORT HK_ERROR HkBeam(const wstring &wscCharname, const wstring &wscBasename);
+EXPORT HK_ERROR HkBeamById(uint clientId, uint baseId);
 EXPORT HK_ERROR HkSaveChar(const wstring &wscCharname);
 EXPORT HK_ERROR HkEnumCargo(const wstring &wscCharname, list<CARGO_INFO> &lstCargo, int &iRemainingHoldSize);
 EXPORT HK_ERROR HkRemoveCargo(const wstring &wscCharname, uint iID, int iCount);
@@ -631,6 +777,7 @@ EXPORT HK_ERROR HkReadCharFile(const wstring &wscCharname, list<wstring> &lstOut
 EXPORT HK_ERROR HkWriteCharFile(const wstring &wscCharname, wstring wscData);
 
 // HkFuncLog
+#define AddBothLog(s, ...) { AddLog(s, __VA_ARGS__); AddDebugLog(s, __VA_ARGS__);  }
 EXPORT void AddDebugLog(const char *szString, ...);
 EXPORT void AddLog(const char *szString, ...);
 EXPORT void HkHandleCheater(uint iClientID, bool bBan, wstring wscReason, ...);
@@ -666,6 +813,9 @@ EXPORT wstring HkErrGetText(HK_ERROR hkErr);
 void ClearClientInfo(uint iClientID);
 void LoadUserSettings(uint iClientID);
 
+
+EXPORT FARPROC PatchCallAddr(char* hMod, DWORD dwInstallAddress, char* dwHookFunction);
+
 // HkCbUserCmd
 bool UserCmd_Process(uint iClientID, const wstring &wscCmd);
 EXPORT void UserCmd_SetDieMsg(uint iClientID, wstring &wscParam);
@@ -673,16 +823,24 @@ EXPORT void UserCmd_SetChatFont(uint iClientID, wstring &wscParam);
 EXPORT void PrintUserCmdText(uint iClientID, wstring wscText, ...);
 
 // HkDeath
-void ShipDestroyedHook();
+void ShipDestroyedNaked();
+void SolarDestroyedNaked();
+void MineDestroyedNaked();
+void GuidedDestroyedNaked();
 void BaseDestroyed(uint iObject, uint iClientIDBy);
+void ShipColGrpDestroyedHookNaked();
+void SolarColGrpDestroyedHookNaked();
+extern FARPROC ColGrpDeathOrigFunc;
 
 // HkDamage
-void _HookMissileTorpHit();
+void HookExplosionHitNaked();
 void _HkCb_AddDmgEntry();
-void _HkCb_GeneralDmg();
-void _HkCb_GeneralDmg2();
-bool AllowPlayerDamage(uint iClientID, uint iClientIDTarget);
+void ShipHullDamageNaked();
+void SolarHullDamageNaked();
+bool AllowPlayerDamageIds(const uint clientVictim, const uint clientAttacker);
 void _HkCb_NonGunWeaponHitsBase();
+void AllowPlayerDamageNaked();
+extern FARPROC AllowPlayerDamageOrigFunc;
 extern FARPROC fpOldNonGunWeaponHitsBase;
 EXPORT extern bool g_gNonGunHitsBase;
 EXPORT extern float g_LastHitPts;
@@ -711,13 +869,14 @@ namespace HkIEngine
 	extern FARPROC fpOldInitCShip;
 	extern FARPROC fpOldDestroyCShip;
 	extern FARPROC fpOldLoadRepCharFile;
+	extern bool bAbortEventRequest;
 }
 
 // HkTimers
 void HkTimerCheckKick();
 void HkTimerNPCAndF1Check();
 
-extern EXPORT list<BASE_INFO> lstBases;
+extern EXPORT unordered_map<uint, BASE_INFO> lstBases;
 
 // namespaces
 namespace HkIServerImpl
@@ -753,8 +912,11 @@ extern EXPORT bool g_bMsgS;
 extern EXPORT bool g_bMsgU;
 
 extern FARPROC fpOldShipDestroyed;
-extern FARPROC fpOldMissileTorpHit;
-extern FARPROC fpOldGeneralDmg, fpOldGeneralDmg2;
+extern FARPROC fpOldSolarDestroyed;
+extern FARPROC MineDestroyedOrigFunc;
+extern FARPROC GuidedDestroyedOrigFunc;
+extern FARPROC fpOldExplosionHit;
+extern FARPROC ShipHullDamageOrigFunc, SolarHullDamageOrigFunc;
 
 extern EXPORT CDPClientProxy **g_cClientProxyArray;
 extern EXPORT void *pClient;

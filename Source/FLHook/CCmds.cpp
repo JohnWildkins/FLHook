@@ -786,6 +786,39 @@ void CCmds::CmdRehash()
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+void CCmds::CmdSetPerfTimer(int loggingTime)
+{
+	RIGHT_CHECK(RIGHT_SUPERADMIN);
+
+	set_perfTimerLength = time(0) + loggingTime;
+	set_logPerfTimers = true;
+
+	Print(L"OK\n");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void CCmds::CmdSetHookPerfTimer(string hookName, int loggingTime)
+{
+	RIGHT_CHECK(RIGHT_SUPERADMIN);
+
+	set_hookPerfTimerLength = time(0) + loggingTime;
+	set_perfTimedHookName = hookName;
+
+	Print(L"OK\n");
+}
+
+void CCmds::CmdDumpCorePerfTimers(int loggingTime)
+{
+	RIGHT_CHECK(RIGHT_SUPERADMIN);
+
+	set_corePerfTimerLength = time(0) + loggingTime;
+
+	Print(L"OK\n");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void CCmds::CmdHelp()
 {
 	wchar_t wszHelpMsg[] =
@@ -1038,7 +1071,7 @@ void CCmds::ExecuteCommandString(const wstring &wscCmdStr)
 		wstring wscCmd = ToLower(GetParam(wscCmdStr, ' ', 0));
 		if (wscCmd.length() == 0)
 		{
-			Print(L"ERR unknown command\n");
+			Print(L"ERR unknown command input\n");
 			return;
 		}
 
@@ -1233,6 +1266,18 @@ void CCmds::ExecuteCommandString(const wstring &wscCmdStr)
 			}
 			else if (IS_CMD("test")) {
 				CmdTest(ArgInt(1), ArgInt(2), ArgInt(3));
+			}
+			else if (IS_CMD("perftimercheck"))
+			{
+				CmdSetPerfTimer(ArgInt(1));
+			}
+			else if (IS_CMD("hookperftimercheck"))
+			{
+				CmdSetHookPerfTimer(wstos(ArgStr(1)), ArgInt(2));
+			}
+			else if (IS_CMD("dumpcoretimers"))
+			{
+				CmdDumpCorePerfTimers(ArgInt(1));
 			}
 			else {
 				Print(L"ERR unknown command\n");

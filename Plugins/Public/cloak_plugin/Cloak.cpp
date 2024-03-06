@@ -23,8 +23,15 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <sstream>
+#include "minijson_writer.hpp"
 
 static int set_iPluginDebug = 0;
+static bool cloakStateChanged = true;
+static string filePath = "c:/stats/player_cloak_status.json";
+bool set_enableCloakSystemOverride = false;
+
+uint jumpingPlayers[MAX_CLIENT_ID + 1];
 
 /// A return code to indicate to FLHook if we want the hook processing to continue.
 PLUGIN_RETURNCODE returncode;
@@ -37,15 +44,23 @@ enum INFO_STATE
 	STATE_CLOAK_ON = 3,
 };
 
+struct CLOAK_FUEL_USAGE
+{
+	float usageStatic = 0;
+	float usageLinear = 0;
+	float usageSquare = 0;
+};
+
 struct CLOAK_ARCH
 {
 	string scNickName;
 	int iWarmupTime;
-	int iCooldownTime;
-	int iHoldSizeLimit;
-	map<uint, uint> mapFuelToUsage;
-	bool singleUseCloak = false;
+	int activationPeriod;
+	uint availableShipClasses;
+	unordered_map<uint, CLOAK_FUEL_USAGE> mapFuelToUsage;
 	bool bDropShieldsOnUncloak;
+	bool bBreakOnProximity;
+	float fRange;
 };
 
 struct CLOAK_INFO
@@ -53,28 +68,22 @@ struct CLOAK_INFO
 	CLOAK_INFO()
 	{
 
-		uint iCloakSlot = 0;
-		bCanCloak = false;
-		mstime tmCloakTime = 0;
-		uint iState = STATE_CLOAK_INVALID;
-		uint bAdmin = false;
+		iCloakSlot = 0;
+		tmCloakTime = 0;
+		iState = STATE_CLOAK_INVALID;
+		bAdmin = false;
 
-		arch.iWarmupTime = 0;
-		arch.iCooldownTime = 0;
-		arch.iHoldSizeLimit = 0;
-		arch.mapFuelToUsage.clear();
-		arch.bDropShieldsOnUncloak = false;
+		arch = nullptr;
 	}
 
-	uint iCloakSlot;
-	bool bCanCloak;
+	ushort iCloakSlot;
 	mstime tmCloakTime;
 	uint iState;
+	float fuelUsageCounter = 0;
 	bool bAdmin;
 	int DisruptTime;
-	bool singleCloakConsumed = false;
 
-	CLOAK_ARCH arch;
+	CLOAK_ARCH* arch;
 };
 
 struct CDSTRUCT
@@ -95,12 +104,19 @@ struct CLIENTCDSTRUCT
 };
 
 static unordered_map<uint, CLOAK_INFO> mapClientsCloak;
-static map<uint, CLIENTCDSTRUCT> mapClientsCD;
+static unordered_map<uint, CLIENTCDSTRUCT> mapClientsCD;
 
 static map<uint, CLOAK_ARCH> mapCloakingDevices;
 static map<uint, CDSTRUCT> mapCloakDisruptors;
 
-static unordered_set<uint> setJumpingClients;
+static uint cloakAlertSound = CreateID("cloak_osiris");
+
+struct OBSCURED_SYSTEM
+{
+	string nickname;
+	uint hash;
+};
+static unordered_map<uint, OBSCURED_SYSTEM> mapObscuredSystems;
 
 void LoadSettings();
 
@@ -124,6 +140,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 
 void LoadSettings()
 {
+
+	returncode = DEFAULT_RETURNCODE;
 	// The path to the configuration file.
 	char szCurDir[MAX_PATH];
 	GetCurrentDirectory(sizeof(szCurDir), szCurDir);
@@ -131,7 +149,6 @@ void LoadSettings()
 
 	int cloakamt = 0;
 	int cdamt = 0;
-	int limitedamt = 0;
 	INI_Reader ini;
 	if (ini.open(scPluginCfgFile.c_str(), false))
 	{
@@ -151,30 +168,53 @@ void LoadSettings()
 					{
 						device.iWarmupTime = ini.get_value_int(0);
 					}
-					else if (ini.is_value("cooldown_time"))
+					else if (ini.is_value("ship_classes"))
 					{
-						device.iCooldownTime = ini.get_value_int(0);
-					}
-					else if (ini.is_value("hold_size_limit"))
-					{
-						device.iHoldSizeLimit = ini.get_value_int(0);
+						uint types = 0;
+						string typeStr = ToLower(ini.get_value_string(0));
+						if (typeStr.find("fighter") != string::npos)
+							types |= Fighter;
+						if (typeStr.find("freighter") != string::npos)
+							types |= Freighter;
+						if (typeStr.find("transport") != string::npos)
+							types |= Transport;
+						if (typeStr.find("gunboat") != string::npos)
+							types |= Gunboat;
+						if (typeStr.find("cruiser") != string::npos)
+							types |= Cruiser;
+						if (typeStr.find("capital") != string::npos)
+							types |= Capital;
+
+						device.availableShipClasses = types;
 					}
 					else if (ini.is_value("fuel"))
 					{
+						CLOAK_FUEL_USAGE fuelUsage;
 						string scNickName = ini.get_value_string(0);
-						uint usage = ini.get_value_int(1);
-						bool limitedCloak = ini.get_value_bool(2);
-						if (limitedCloak) {
-							limitedamt++;
-						}
-						device.singleUseCloak = limitedCloak;
-						device.mapFuelToUsage[CreateID(scNickName.c_str())] = usage;
+						fuelUsage.usageStatic = ini.get_value_float(1);
+						fuelUsage.usageLinear = ini.get_value_float(2);
+						fuelUsage.usageSquare = ini.get_value_float(3);
+						device.mapFuelToUsage[CreateID(scNickName.c_str())] = fuelUsage;
 					}
 					else if (ini.is_value("drop_shields_on_uncloak"))
 					{
 						device.bDropShieldsOnUncloak = ini.get_value_bool(0);
 					}
+					else if (ini.is_value("break_cloak_on_proximity"))
+					{
+						device.bBreakOnProximity = ini.get_value_bool(0);
+					}
+					else if (ini.is_value("detection_range")) {
+						device.fRange = ini.get_value_float(0);
+					}
 				}
+				auto cloakArch = reinterpret_cast<Archetype::CloakingDevice*>(Archetype::GetEquipment(CreateID(device.scNickName.c_str())));
+				if (!cloakArch)
+				{
+					ConPrint(L"Problem loading config for cloak %ls", stows(device.scNickName).c_str());
+					continue;
+				}
+				device.activationPeriod = static_cast<int>(ceil(cloakArch->fCloakinTime * 1000));
 				mapCloakingDevices[CreateID(device.scNickName.c_str())] = device;
 				++cloakamt;
 			}
@@ -211,13 +251,35 @@ void LoadSettings()
 				mapCloakDisruptors[CreateID(disruptor.nickname.c_str())] = disruptor;
 				++cdamt;
 			}
+			else if (ini.is_header("General")) {
+				while (ini.read_value())
+				{
+					if (ini.is_value("cloak_alert_sound"))
+					{
+						cloakAlertSound = CreateID(ini.get_value_string());
+					}
+					else if (ini.is_value("enable_system_override_and_logging"))
+					{
+						set_enableCloakSystemOverride = ini.get_value_bool(0);
+					}
+				}
+			}
+			else if (ini.is_header("PlayerListCloak"))
+			{
+				while (ini.read_value())
+				{
+					if (ini.is_value("mask"))
+					{
+						mapObscuredSystems[CreateID(ini.get_value_string(0))] = { ini.get_value_string(1), CreateID(ini.get_value_string(1)) };
+					}
+				}
+			}
 		}
 		ini.close();
 	}
 
 	ConPrint(L"CLOAK: Loaded %u cloaking devices \n", cloakamt);
 	ConPrint(L"CLOAK: Loaded %u cloak disruptors \n", cdamt);
-	ConPrint(L"CLOAK: Loaded %u limited cloak setups \n", limitedamt);
 
 	struct PlayerData *pd = 0;
 	while (pd = Players.traverse_active(pd))
@@ -227,8 +289,8 @@ void LoadSettings()
 
 void ClearClientInfo(uint iClientID)
 {
+	returncode = DEFAULT_RETURNCODE;
 	mapClientsCloak.erase(iClientID);
-	setJumpingClients.erase(iClientID);
 }
 
 void SetCloak(uint iClientID, uint iShipID, bool bOn)
@@ -240,12 +302,44 @@ void SetCloak(uint iClientID, uint iShipID, bool bOn)
 	Server.ActivateEquip(iClientID, ActivateEq);
 }
 
+void ObscureSystemList(uint clientId)
+{
+	if (!set_enableCloakSystemOverride)
+	{
+		return;
+	}
+	uint system = Players[clientId].iSystemID;
+	if (mapObscuredSystems.count(system))
+	{
+		Players.SendSystemID(clientId, mapObscuredSystems.at(system).hash);
+	}
+	else
+	{
+		PrintUserCmdText(clientId, L"ERR unable to mask your system on playerlist, contact admins");
+	}
+}
+
+void RestoreSystemList(uint clientId)
+{
+	if (!set_enableCloakSystemOverride)
+	{
+		return;
+	}
+	Players.SendSystemID(clientId, Players[clientId].iSystemID);
+}
+
 void SetState(uint iClientID, uint iShipID, int iNewState)
 {
-	if (mapClientsCloak[iClientID].iState != iNewState)
+	auto& cloakInfo = mapClientsCloak[iClientID];
+	if (cloakInfo.iState != iNewState)
 	{
-		mapClientsCloak[iClientID].iState = iNewState;
-		mapClientsCloak[iClientID].tmCloakTime = timeInMS();
+		if (cloakInfo.iState == STATE_CLOAK_ON || iNewState == STATE_CLOAK_ON)
+		{
+			cloakStateChanged = true;
+		}
+
+		cloakInfo.iState = iNewState;
+		cloakInfo.tmCloakTime = timeInMS();
 		CLIENT_CLOAK_STRUCT communicationInfo;
 		switch (iNewState)
 		{
@@ -271,6 +365,7 @@ void SetState(uint iClientID, uint iShipID, int iNewState)
 			SetCloak(iClientID, iShipID, true);
 			PrintUserCmdText(iClientID, L"Cloaking device on");
 			ClientInfo[iClientID].bCloaked = true;
+			ObscureSystemList(iClientID);
 			break;
 		}
 		case STATE_CLOAK_OFF:
@@ -285,145 +380,148 @@ void SetState(uint iClientID, uint iShipID, int iNewState)
 			SetCloak(iClientID, iShipID, false);
 			PrintUserCmdText(iClientID, L"Cloaking device off");
 			ClientInfo[iClientID].bCloaked = false;
+			RestoreSystemList(iClientID);
 			break;
 		}
 		}
 	}
 }
 
-bool removeSingleFuel(uint iClientID, CLOAK_INFO &info)
+// Returns false if the ship has no fuel to operate its cloaking device.
+static bool ProcessFuel(uint iClientID, CLOAK_INFO &info, uint iShipID)
 {
-	for (list<EquipDesc>::iterator item = Players[iClientID].equipDescList.equip.begin(); item != Players[iClientID].equipDescList.equip.end(); item++)
+	if (info.bAdmin)
+		return true;
+
+	CShip* cship = ClientInfo[iClientID].cship;
+	if (!cship)
 	{
-		uint fuel_usage = info.arch.mapFuelToUsage[item->iArchID];
-		if (item->iCount >= fuel_usage)
+		return true;
+	}
+	if (jumpingPlayers[iClientID])
+	{
+		--jumpingPlayers[iClientID];
+		return true;
+	}
+	CEquipTraverser tr(EquipmentClass::Cargo);
+	CECargo* cargo;
+	while (cargo = reinterpret_cast<CECargo*>(cship->equip_manager.Traverse(tr)))
+	{
+		CLOAK_FUEL_USAGE* fuelUsage;
+		if (!info.arch->mapFuelToUsage.count(cargo->archetype->iArchID))
 		{
-			pub::Player::RemoveCargo(iClientID, item->sID, fuel_usage);
-			info.singleCloakConsumed = true;
+			continue;
+		}
+		else
+		{
+			fuelUsage = &info.arch->mapFuelToUsage.at(cargo->archetype->iArchID);
+		}
+
+		float currFuelUsage = fuelUsage->usageStatic;
+		if (fuelUsage->usageLinear != 0.0f || fuelUsage->usageSquare != 0.0f)
+		{
+			Vector dir1;
+			Vector dir2;
+			pub::SpaceObj::GetMotion(iShipID, dir1, dir2);
+			float vecLength = sqrtf(dir1.x * dir1.x + dir1.y * dir1.y + dir1.z * dir1.z);
+
+			currFuelUsage += fuelUsage->usageLinear * vecLength;
+			currFuelUsage += fuelUsage->usageSquare * vecLength * vecLength;
+		}
+		info.fuelUsageCounter += currFuelUsage;
+		uint totalFuelUsage = static_cast<uint>(max(info.fuelUsageCounter, 0.0f));
+		if (cargo->count >= totalFuelUsage)
+		{
+			if (totalFuelUsage >= 25) // Wait until the fuel usage reaches 25 to actually call RemoveCargo, as it's an expensive operation.
+			{
+				info.fuelUsageCounter -= static_cast<float>(totalFuelUsage);
+				pub::Player::RemoveCargo(iClientID, cargo->iSubObjId, totalFuelUsage);
+			}
 			return true;
 		}
 	}
 
 	return false;
-
 }
 
-// Returns false if the ship has no fuel to operate its cloaking device.
-static bool ProcessFuel(uint iClientID, CLOAK_INFO &info)
+void InitCloakInfo(uint client, uint distance)
 {
-	if (info.bAdmin)
-		return true;
-
-	if (!info.singleCloakConsumed && info.arch.singleUseCloak) {
-		return removeSingleFuel(iClientID, info);
-	}
-
-	else if (info.singleCloakConsumed)
-	{
-		return true;
-	}
-
-	for (list<EquipDesc>::iterator item = Players[iClientID].equipDescList.equip.begin(); item != Players[iClientID].equipDescList.equip.end(); item++)
-	{
-		if (info.arch.mapFuelToUsage.find(item->iArchID) != info.arch.mapFuelToUsage.end())
-		{
-			uint fuel_usage = info.arch.mapFuelToUsage[item->iArchID];
-			if (item->iCount >= fuel_usage)
-			{
-				pub::Player::RemoveCargo(iClientID, item->sID, fuel_usage);
-				return true;
-			}
-		}
-	}
-
-	return false;
+	wchar_t buf[50];
+	_snwprintf(buf, sizeof(buf), L" InitCloakInfo %u", distance);
+	HkFMsg(client, L"<TEXT>" + XMLText(buf) + L"</TEXT>");
 }
 
-void PlayerLaunch_AFTER(unsigned int iShip, unsigned int iClientID)
+void __stdcall PlayerLaunch_AFTER(unsigned int iShip, unsigned int iClientID)
 {
-	mapClientsCloak[iClientID].bCanCloak = false;
-	mapClientsCloak[iClientID].bAdmin = false;
+	returncode = DEFAULT_RETURNCODE;
 
-
-	for (list<EquipDesc>::iterator item = Players[iClientID].equipDescList.equip.begin(); item != Players[iClientID].equipDescList.equip.end(); item++)
+	CShip* cship = ClientInfo[iClientID].cship;
+	if (!cship)
 	{
-		if (mapCloakDisruptors.find(item->iArchID) != mapCloakDisruptors.end())
+		ConPrint(L"CShip not found!!!\n");
+		return;
+	}
+
+	jumpingPlayers[iClientID] = 0;
+	CEquipTraverser disrTrav(EquipmentClass::CM);
+
+	CEquip* disruptorEq;
+	while (disruptorEq = cship->equip_manager.Traverse(disrTrav))
+	{
+		if (mapCloakDisruptors.count(disruptorEq->archetype->iArchID))
 		{
-			if (item->bMounted)
-			{
-				//PrintUserCmdText(iClientID, L"DEBUG: Found relevant item: %s", stows(mapCloakDisruptors[item->equip.iArchID].nickname).c_str());
-				pub::Audio::PlaySoundEffect(iClientID, CreateID("cargo_jettison"));
+			CDSTRUCT cd;
+			CLIENTCDSTRUCT cdclient;
 
-				CDSTRUCT cd;
-				CLIENTCDSTRUCT cdclient;
+			cdclient.cdwn = 0;
+			cdclient.cd = mapCloakDisruptors[disruptorEq->archetype->iArchID];
 
-				cdclient.cdwn = 0;
-				cdclient.cd = mapCloakDisruptors[item->iArchID];
-
-				mapClientsCD[iClientID] = cdclient;
-				//PrintUserCmdText(iClientID, L"DEBUG: Checking data is correct: CD name is %s", stows(mapClientsCD[iClientID].cd.nickname).c_str());
-			}
+			mapClientsCD[iClientID] = cdclient;
+			break;
 		}
 	}
 
 	//Legacy code for the cloaks, needs to be rewritten at some point. - Alley
 
-	IObjInspectImpl *obj = HkGetInspect(iClientID);
-	if (obj)
+
+	CEquip* cloakEq = cship->equip_manager.FindFirst(EquipmentClass::CloakingDevice);
+	if (!cloakEq)
 	{
-		CShip* cship = (CShip*)HkGetEqObjFromObjRW((IObjRW*)obj);
+		return;
+	}
+	if (!mapCloakingDevices.count(cloakEq->EquipArch()->iArchID))
+	{
+		return;
+	}
 
-		CEquipManager* eqmanager = (CEquipManager*)((char*)cship + 0xE4);
-		CEquipTraverser tr(-1);
-		CEquip *equip = eqmanager->Traverse(tr);
-
-		while (equip)
-		{
-			if (CECloakingDevice::cast(equip))
-			{
-				mapClientsCloak[iClientID].iCloakSlot = equip->GetID();
-
-				if (mapCloakingDevices.find(equip->EquipArch()->iArchID) != mapCloakingDevices.end())
-				{
-					// Otherwise set the fuel usage and warm up time
-					mapClientsCloak[iClientID].arch = mapCloakingDevices[equip->EquipArch()->iArchID];
-				}
-				// If this cloaking device does not appear in the cloaking device list
-				// then warming up and fuel usage is zero and it may be used by any
-				// ship.
-				else
-				{
-					mapClientsCloak[iClientID].arch.bDropShieldsOnUncloak = false;
-					mapClientsCloak[iClientID].arch.iCooldownTime = 0;
-					mapClientsCloak[iClientID].arch.iHoldSizeLimit = 0;
-					mapClientsCloak[iClientID].arch.iWarmupTime = 0;
-					mapClientsCloak[iClientID].arch.mapFuelToUsage.clear();
-				}
-
-				mapClientsCloak[iClientID].DisruptTime = 0;
-				mapClientsCloak[iClientID].bCanCloak = true;
-				mapClientsCloak[iClientID].iState = STATE_CLOAK_INVALID;
-				SetState(iClientID, iShip, STATE_CLOAK_OFF);
-				return;
-			}
-
-			equip = eqmanager->Traverse(tr);
-
-		}
+	auto& cloakInfo = mapClientsCloak[iClientID];
+	cloakInfo.iCloakSlot = cloakEq->GetID();
+	cloakInfo.arch = &mapCloakingDevices.at(cloakEq->EquipArch()->iArchID);
+	cloakInfo.DisruptTime = 0;
+	cloakInfo.iState = STATE_CLOAK_INVALID;
+	SetState(iClientID, iShip, STATE_CLOAK_OFF);
+	if (cloakInfo.arch && cloakInfo.arch->bBreakOnProximity && !cloakInfo.bAdmin)
+	{
+		InitCloakInfo(iClientID, static_cast<uint>(cloakInfo.arch->fRange));
 	}
 }
 
 void BaseEnter(unsigned int iBaseID, unsigned int iClientID)
 {
+	returncode = DEFAULT_RETURNCODE;
+	if (mapClientsCloak.count(iClientID) && mapClientsCloak.at(iClientID).iState == STATE_CLOAK_ON)
+	{
+		RestoreSystemList(iClientID);
+	}
 	mapClientsCloak.erase(iClientID);
 	mapClientsCD.erase(iClientID);
 }
 
 void HkTimerCheckKick()
 {
+	returncode = DEFAULT_RETURNCODE;
 	mstime now = timeInMS();
-	uint curr_time = (uint)time(0);
-
+	uint timeNow = time(0);
 
 	for (auto& ci = mapClientsCloak.begin(); ci != mapClientsCloak.end(); ++ci)
 	{
@@ -446,101 +544,53 @@ void HkTimerCheckKick()
 			}
 		}
 
-		if (iShipID && info.bCanCloak)
+		if (iShipID)
 		{
 			switch (info.iState)
 			{
 			case STATE_CLOAK_OFF:
-				// Send cloak state for uncloaked cloak-able players (only for them in space)
-				// this is the code to fix the bug where players wouldnt always see uncloaked players
-				XActivateEquip ActivateEq;
-				ActivateEq.bActivate = false;
-				ActivateEq.iSpaceID = iShipID;
-				ActivateEq.sID = info.iCloakSlot;
-				Server.ActivateEquip(iClientID, ActivateEq);
+				if (timeNow % 3 == 0)
+				{
+					// Send cloak state for uncloaked cloak-able players (only for them in space) 
+					// this is the code to fix the bug where players wouldnt always see uncloaked players 
+					XActivateEquip ActivateEq;
+					ActivateEq.bActivate = false;
+					ActivateEq.iSpaceID = iShipID;
+					ActivateEq.sID = info.iCloakSlot;
+					Server.ActivateEquip(iClientID, ActivateEq);
+				}
 				break;
-
 			case STATE_CLOAK_CHARGING:
-				if (!ProcessFuel(iClientID, info))
+				if (!ProcessFuel(iClientID, info, iShipID))
 				{
 					PrintUserCmdText(iClientID, L"Cloaking device shutdown, no fuel");
 					SetState(iClientID, iShipID, STATE_CLOAK_OFF);
 				}
-				else if (setJumpingClients.find(iClientID) != setJumpingClients.end())
-				{
-					PrintUserCmdText(iClientID, L"Cloaking device shutdown, jumping");
-					SetState(iClientID, iShipID, STATE_CLOAK_OFF);
-
-					wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
-					HkAddCheaterLog(wscCharname, L"Attempting to cloak charge while on list of clients currently jumping");
-				}
-				else if ((info.tmCloakTime + info.arch.iWarmupTime) < now)
+				else if ((info.tmCloakTime + info.arch->iWarmupTime) < now)
 				{
 					SetState(iClientID, iShipID, STATE_CLOAK_ON);
 				}
-				else if (info.arch.bDropShieldsOnUncloak && !info.bAdmin)
+				else if (info.arch->bDropShieldsOnUncloak && !info.bAdmin)
 				{
 					pub::SpaceObj::DrainShields(iShipID);
 				}
 				break;
 
 			case STATE_CLOAK_ON:
-				if (!ProcessFuel(iClientID, info))
+				if (!ProcessFuel(iClientID, info, iShipID) && info.tmCloakTime + info.arch->activationPeriod < now)
 				{
 					PrintUserCmdText(iClientID, L"Cloaking device shutdown, no fuel");
 					SetState(iClientID, iShipID, STATE_CLOAK_OFF);
 				}
-				else if (info.arch.bDropShieldsOnUncloak && !info.bAdmin)
+				else if (info.arch->bDropShieldsOnUncloak && !info.bAdmin)
 				{
 					pub::SpaceObj::DrainShields(iShipID);
-
-
-					if ((curr_time % 5) == 0)
-					{
-						uint iShip;
-						pub::Player::GetShip(iClientID, iShip);
-
-						Vector pos;
-						Matrix rot;
-						pub::SpaceObj::GetLocation(iShipID, pos, rot);
-
-						uint iSystem;
-						pub::Player::GetSystem(iClientID, iSystem);
-
-						uint MusictoID = CreateID("dsy_jumpdrive_survey");
-						//pub::Audio::PlaySoundEffect(iClientID, MusictoID);
-
-						// For all players in system...
-						struct PlayerData *pPD = 0;
-						while (pPD = Players.traverse_active(pPD))
-						{
-							// Get the this player's current system and location in the system.
-							uint client2 = HkGetClientIdFromPD(pPD);
-							uint iSystem2 = 0;
-							pub::Player::GetSystem(client2, iSystem2);
-							if (iSystem != iSystem2)
-								continue;
-
-							uint iShip2;
-							pub::Player::GetShip(client2, iShip2);
-
-							Vector pos2;
-							Matrix rot2;
-							pub::SpaceObj::GetLocation(iShip2, pos2, rot2);
-
-							// Is player within the specified range of the sending char.
-							if (HkDistance3D(pos, pos2) > 4000)
-								continue;
-
-							pub::Audio::PlaySoundEffect(client2, MusictoID);
-						}
-					}
 				}
 				break;
 			}
 		}
 	}
-	for (map<uint, CLIENTCDSTRUCT>::iterator cd = mapClientsCD.begin(); cd != mapClientsCD.end(); ++cd)
+	for (auto& cd = mapClientsCD.begin(); cd != mapClientsCD.end(); ++cd)
 	{
 		if (cd->second.cdwn >= 2)
 		{
@@ -557,6 +607,42 @@ void HkTimerCheckKick()
 			cd->second.cdwn = 0;
 		}
 	}
+
+	if (set_enableCloakSystemOverride && cloakStateChanged && timeNow%5 == 0)
+	{
+		stringstream stream;
+		minijson::object_writer writer(stream);
+		string sPlayer = "players";
+		minijson::object_writer pwc = writer.nested_object(sPlayer.c_str());
+
+		for (auto& iter : mapClientsCloak)
+		{
+			if (iter.second.iState != STATE_CLOAK_ON)
+			{
+				continue;
+			}
+			uint playerSystem = Players[iter.first].iSystemID;
+			if (!mapObscuredSystems.count(playerSystem))
+			{
+				continue;
+			}
+			string playerName = wstos((const wchar_t*)Players.GetActiveCharacterName(iter.first));
+			minijson::object_writer pw = pwc.nested_object(playerName.c_str());
+			pw.write("system", mapObscuredSystems.at(playerSystem).nickname.c_str());
+			pw.close();
+		}
+		pwc.close();
+		writer.close();
+
+		FILE* file = fopen(filePath.c_str(), "w");
+		if (file)
+		{
+			fprintf(file, "%s", stream.str().c_str());
+			fclose(file);
+		}
+		cloakStateChanged = false;
+	}
+
 }
 
 void CloakDisruptor(uint iClientID)
@@ -593,23 +679,25 @@ void CloakDisruptor(uint iClientID)
 			continue;
 
 		//we check if that character has a cloaking device.
-		if (mapClientsCloak[client2].bCanCloak == true)
+		if (!mapClientsCloak.count(client2))
 		{
-			//if it's an admin, do nothing. Doing it this way fixes the ghost bug.
-			if (mapClientsCloak[client2].bAdmin == true)
-			{
+			continue;
+		}
+		
+		auto& cloakInfo = mapClientsCloak[client2];
 
-			}
-			else
+		//if it's an admin, do nothing. Doing it this way fixes the ghost bug.
+		if (!cloakInfo.bAdmin)
+		{
+			mstime now = timeInMS();
+			//check if the cloak is charging or is already on
+			if (cloakInfo.iState == STATE_CLOAK_CHARGING 
+				|| (cloakInfo.iState == STATE_CLOAK_ON && (cloakInfo.tmCloakTime + cloakInfo.arch->activationPeriod) < now))
 			{
-				//check if the cloak is charging or is already on
-				if (mapClientsCloak[client2].iState == STATE_CLOAK_CHARGING || mapClientsCloak[client2].iState == STATE_CLOAK_ON)
-				{
-					SetState(client2, iDmgToSpaceID, STATE_CLOAK_OFF);
-					pub::Audio::PlaySoundEffect(client2, CreateID("cloak_osiris"));
-					PrintUserCmdText(client2, L"Alert: Cloaking device disruption field detected.");
-					mapClientsCloak[client2].DisruptTime = mapClientsCD[iClientID].cd.cooldown;
-				}
+				SetState(client2, iDmgToSpaceID, STATE_CLOAK_OFF);
+				pub::Audio::PlaySoundEffect(client2, CreateID("cloak_osiris"));
+				PrintUserCmdText(client2, L"Alert: Cloaking device disruption field detected.");
+				cloakInfo.DisruptTime = mapClientsCD[iClientID].cd.cooldown;
 			}
 		}
 	}
@@ -639,47 +727,56 @@ bool UserCmd_Cloak(uint iClientID, const wstring &wscCmd, const wstring &wscPara
 		return true;
 	}
 
-	if (!mapClientsCloak[iClientID].bCanCloak)
+	if (!mapClientsCloak.count(iClientID))
 	{
 		PrintUserCmdText(iClientID, L"Cloaking device not available");
 		return true;
 	}
 
-	if (mapClientsCloak[iClientID].DisruptTime != 0)
+	auto& info = mapClientsCloak[iClientID];
+
+	if (info.DisruptTime != 0)
 	{
-		PrintUserCmdText(iClientID, L"Cloaking Device Disrupted. Please wait %d seconds", mapClientsCloak[iClientID].DisruptTime);
+		PrintUserCmdText(iClientID, L"Cloaking Device Disrupted. Please wait %d seconds", info.DisruptTime);
 		return true;
 	}
 
-	// If this cloaking device requires more power than the ship can provide
-	// no cloaking device is available.
-	IObjInspectImpl *obj = HkGetInspect(iClientID);
-	if (obj)
+	uint type;
+	pub::SpaceObj::GetType(iShip, type);
+	
+	if (!(info.arch->availableShipClasses & type))
 	{
-		CShip* cship = (CShip*)HkGetEqObjFromObjRW((IObjRW*)obj);
-		if (cship)
-		{
-			if (mapClientsCloak[iClientID].arch.iHoldSizeLimit != 0
-				&& mapClientsCloak[iClientID].arch.iHoldSizeLimit < cship->shiparch()->fHoldSize)
-			{
-				PrintUserCmdText(iClientID, L"Cloaking device will not function on this ship type");
-				mapClientsCloak[iClientID].iState = STATE_CLOAK_INVALID;
-				SetState(iClientID, iShip, STATE_CLOAK_OFF);
-				return true;
-			}
-
-			switch (mapClientsCloak[iClientID].iState)
-			{
-			case STATE_CLOAK_OFF:
-				SetState(iClientID, iShip, STATE_CLOAK_CHARGING);
-				break;
-			case STATE_CLOAK_CHARGING:
-			case STATE_CLOAK_ON:
-				SetState(iClientID, iShip, STATE_CLOAK_OFF);
-				break;
-			}
-		}
+		PrintUserCmdText(iClientID, L"Cloaking device will not function on this ship type");
+		info.iState = STATE_CLOAK_INVALID;
+		SetState(iClientID, iShip, STATE_CLOAK_OFF);
+		return true;
 	}
+
+	info.bAdmin = false;
+
+	switch (info.iState)
+	{
+	case STATE_CLOAK_OFF:
+		SetState(iClientID, iShip, STATE_CLOAK_CHARGING);
+		break;
+	case STATE_CLOAK_ON:
+	{
+		mstime now = timeInMS();
+		if ((info.tmCloakTime + info.arch->activationPeriod) < now)
+		{
+			SetState(iClientID, iShip, STATE_CLOAK_OFF);
+		}
+		else
+		{
+			PrintUserCmdText(iClientID, L"ERR Device must fully activate before deactivation.");
+		}
+		break;
+	}
+	case STATE_CLOAK_CHARGING:
+		SetState(iClientID, iShip, STATE_CLOAK_OFF);
+		break;
+	}
+	
 	return true;
 }
 
@@ -702,16 +799,24 @@ bool UserCmd_Disruptor(uint iClientID, const wstring &wscCmd, const wstring &wsc
 			//bugfix, initial status assumes every player don't have ammo.
 			bool foundammo = false;
 
-			for (list<EquipDesc>::iterator item = Players[iClientID].equipDescList.equip.begin(); item != Players[iClientID].equipDescList.equip.end(); item++)
+			CShip* cship = ClientInfo[iClientID].cship;
+			if (!cship)
 			{
-				if (item->iArchID == mapClientsCD[iClientID].cd.ammotype)
+				PrintUserCmdText(iClientID, L"Ship not in space!");
+				return true;
+			}
+			CEquipTraverser tr(EquipmentClass::Cargo);
+			CECargo* cargo;
+			while (cargo = reinterpret_cast<CECargo*>(cship->equip_manager.Traverse(tr)))
+			{
+				if (cargo->archetype->iArchID == mapClientsCD[iClientID].cd.ammotype)
 				{
-					if (item->iCount >= mapClientsCD[iClientID].cd.ammoamount)
+					if (cargo->GetCount() >= mapClientsCD[iClientID].cd.ammoamount)
 					{
-						pub::Player::RemoveCargo(iClientID, item->sID, mapClientsCD[iClientID].cd.ammoamount);
+						pub::Player::RemoveCargo(iClientID, cargo->iSubObjId, mapClientsCD[iClientID].cd.ammoamount);
 						foundammo = true;
-						break;
 					}
+					break;
 				}
 			}
 
@@ -737,6 +842,15 @@ bool UserCmd_Disruptor(uint iClientID, const wstring &wscCmd, const wstring &wsc
 	return true;
 }
 
+void CloakAlert(CUSTOM_CLOAK_ALERT_STRUCT* data)
+{
+	for (uint clientId : data->alertedGroupMembers)
+	{
+		pub::Audio::PlaySoundEffect(clientId, cloakAlertSound);
+	}
+}
+
+
 
 typedef bool(*_UserCmdProc)(uint, const wstring &, const wstring &, const wchar_t*);
 
@@ -747,12 +861,51 @@ struct USERCMD
 	wchar_t *usage;
 };
 
+typedef IObjRW* (*vtableLooker)(uint);
+const vtableLooker lol = vtableLooker(0x6D00670);
+bool UserCmd_Zzz(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage)
+{
+	CShip* ship = ClientInfo[iClientID].cship;
+	if (!ship)
+	{
+		return true;
+	}
+	//IObjRW* target = ship->target;
+	
+	//uint targetId;
+	//pub::SpaceObj::GetTarget(Players[iClientID].iShipID, targetId);
+	//IObjRW* target = lol(targetId);
+
+	CProjectile* targetId = (CProjectile*)CObject::FindFirst(CObject::CEQUIPMENT_OBJECT);
+	if (!targetId)
+	{
+		return true;
+	}
+	IObjRW* target = lol(targetId->id);
+	if (target)
+	{
+		PrintUserCmdText(iClientID, L"%08x - %08x", *(uint*)target, target->cobject()->objectClass);
+		ConPrint(L"%08x - %08x\n", (uint)target, target->cobject()->objectClass);
+	}
+	else
+	{
+		IObjInspectImpl* impl;
+		uint dummy = 0;
+		GetShipInspect(Players[iClientID].iShipID, impl, dummy);
+		uint info = impl->cobject()->objectClass;
+		PrintUserCmdText(iClientID, L"%08x - %08x", *(uint*)impl, info);
+		ConPrint(L"%08x - %08x\n", *(uint*)impl, info);
+	}
+	return true;
+}
+
 USERCMD UserCmds[] =
 {
 	{ L"/cloak", UserCmd_Cloak, L"Usage: /cloak"},
 	{ L"/cloak*", UserCmd_Cloak, L"Usage: /cloak"},
 	{ L"/disruptor", UserCmd_Disruptor, L"Usage: /disruptor"},
 	{ L"/disruptor*", UserCmd_Disruptor, L"Usage: /disruptor"},
+	{ L"/zzz", UserCmd_Zzz, L"Usage: /disruptor"},
 
 };
 
@@ -824,7 +977,7 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring &wscCmd)
 			return true;
 		}
 
-		if (!mapClientsCloak[iClientID].bCanCloak)
+		if (!mapClientsCloak.count(iClientID))
 		{
 			cmds->Print(L"ERR Cloaking device not available");
 			return true;
@@ -834,11 +987,13 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring &wscCmd)
 		{
 		case STATE_CLOAK_OFF:
 			mapClientsCloak[iClientID].bAdmin = true;
+			InitCloakInfo(iClientID, 0);
 			SetState(iClientID, iShip, STATE_CLOAK_ON);
 			break;
 		case STATE_CLOAK_CHARGING:
 		case STATE_CLOAK_ON:
 			mapClientsCloak[iClientID].bAdmin = true;
+			InitCloakInfo(iClientID, 0);
 			SetState(iClientID, iShip, STATE_CLOAK_OFF);
 			break;
 		}
@@ -847,21 +1002,23 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring &wscCmd)
 	return false;
 }
 
-void __stdcall HkCb_AddDmgEntry(DamageList *dmg, unsigned short p1, float& damage, enum DamageEntry::SubObjFate& fate)
+void __stdcall ExplosionHit(IObjRW* iobj, ExplosionDamageEvent* explosion, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
-	if (!iDmgToSpaceID || !dmg->get_inflictor_id())
-		return;
 
-	if (dmg->get_cause() != 0x06 && dmg->get_cause() != 0x15)
+	if (dmg->get_cause() != DamageCause::CruiseDisrupter && dmg->get_cause() != DamageCause::UnkDisrupter)
 		return;
 	
-	uint client = HkGetClientIDByShip(iDmgToSpaceID);
+	uint client = ((CShip*)iobj->cobj)->ownerPlayer;
 	if (!client)
 		return;
 
-	if (mapClientsCloak[client].bCanCloak
-		&& !mapClientsCloak[client].bAdmin
+	if (!mapClientsCloak.count(client))
+	{
+		return;
+	}
+
+	if (!mapClientsCloak[client].bAdmin
 		&& mapClientsCloak[client].iState == STATE_CLOAK_CHARGING)
 	{
 		SetState(client, iDmgToSpaceID, STATE_CLOAK_OFF);
@@ -872,56 +1029,48 @@ void __stdcall JumpInComplete_AFTER(unsigned int iSystem, unsigned int iShip)
 {
 	returncode = DEFAULT_RETURNCODE;
 	uint iClientID = HkGetClientIDByShip(iShip);
-	setJumpingClients.erase(iClientID);
 
-	if (iClientID && mapClientsCloak[iClientID].iState == STATE_CLOAK_CHARGING)
+	if (iClientID)
 	{
+		jumpingPlayers[iClientID] = 4;
+		if (mapClientsCloak[iClientID].iState == STATE_CLOAK_CHARGING)
+		{
+			SetState(iClientID, iShip, STATE_CLOAK_OFF);
+			pub::Audio::PlaySoundEffect(iClientID, CreateID("cloak_osiris"));
+			PrintUserCmdText(iClientID, L"Alert: Cloaking device overheat detected. Shutting down.");
 
-
-		SetState(iClientID, iShip, STATE_CLOAK_OFF);
-		pub::Audio::PlaySoundEffect(iClientID, CreateID("cloak_osiris"));
-		PrintUserCmdText(iClientID, L"Alert: Cloaking device overheat detected. Shutting down.");
-
-		wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
-		HkAddCheaterLog(wscCharname, L"Switched system while under cloak charging mode");
+			wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
+			HkAddCheaterLog(wscCharname, L"Switched system while under cloak charging mode");
+		}
 	}
 }
 
-int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget, int iCancel, enum DOCK_HOST_RESPONSE response)
+int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget, int& iCancel, enum DOCK_HOST_RESPONSE& response)
 {
 	returncode = DEFAULT_RETURNCODE;
 
-	uint client = HkGetClientIDByShip(iShip);
-	if (client)
+	if ((response == PROCEED_DOCK || response == DOCK) && iCancel != -1)
 	{
-		if ((response == PROCEED_DOCK || response == DOCK) && iCancel == -1)
+		uint client = HkGetClientIDByShip(iShip);
+		if (!client)
 		{
-			uint iTypeID;
-			pub::SpaceObj::GetType(iDockTarget, iTypeID);
-			if (iTypeID == OBJ_JUMP_GATE || iTypeID == OBJ_JUMP_HOLE)
-			{
-				setJumpingClients.erase(client);
-			}
+			return 0;
 		}
-		if ((response == PROCEED_DOCK || response == DOCK) && iCancel != -1)
+		// If the last jump happened within 60 seconds then prohibit the docking
+		// on a jump hole or gate.
+		uint iTypeID;
+		pub::SpaceObj::GetType(iDockTarget, iTypeID);
+		if (iTypeID & (JumpGate | JumpHole))
 		{
-			// If the last jump happened within 60 seconds then prohibit the docking
-			// on a jump hole or gate.
-			uint iTypeID;
-			pub::SpaceObj::GetType(iDockTarget, iTypeID);
-			if (iTypeID == OBJ_JUMP_GATE || iTypeID == OBJ_JUMP_HOLE)
+			if (mapClientsCloak[client].iState == STATE_CLOAK_CHARGING)
 			{
-				setJumpingClients.insert(client);
-				if (client && mapClientsCloak[client].iState == STATE_CLOAK_CHARGING)
-				{
-					SetState(client, iShip, STATE_CLOAK_OFF);
-					pub::Audio::PlaySoundEffect(client, CreateID("cloak_osiris"));
-					PrintUserCmdText(client, L"Alert: Cloaking device overheat detected. Shutting down.");
+				SetState(client, iShip, STATE_CLOAK_OFF);
+				pub::Audio::PlaySoundEffect(client, CreateID("cloak_osiris"));
+				PrintUserCmdText(client, L"Alert: Cloaking device overheat detected. Shutting down.");
 
-					wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(client);
-					HkAddCheaterLog(wscCharname, L"About to enter a JG/JH while under cloak charging mode");
-					return 0;
-				}
+				wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(client);
+				HkAddCheaterLog(wscCharname, L"About to enter a JG/JH while under cloak charging mode");
+				return 0;
 			}
 		}
 	}
@@ -929,6 +1078,48 @@ int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget
 	return 0;
 }
 
+void Plugin_Communication_CallBack(PLUGIN_MESSAGE msg, void* data)
+{
+	returncode = DEFAULT_RETURNCODE;
+	if (msg == CUSTOM_CLOAK_ALERT)
+	{
+		returncode = SKIPPLUGINS;
+		CUSTOM_CLOAK_ALERT_STRUCT* info = reinterpret_cast<CUSTOM_CLOAK_ALERT_STRUCT*>(data);
+		CloakAlert(info);
+	}
+	else if (msg == CUSTOM_CLOAK_CHECK)
+	{
+		returncode = SKIPPLUGINS;
+		CUSTOM_CLOAK_CHECK_STRUCT* info = reinterpret_cast<CUSTOM_CLOAK_CHECK_STRUCT*>(data);
+		auto cloakState = mapClientsCloak[info->clientId].iState;
+		if (cloakState == STATE_CLOAK_CHARGING || cloakState == STATE_CLOAK_ON)
+		{
+			info->isCloaked = true;
+		}
+	}
+}
+
+void SwitchOutComplete(uint ship, uint clientId)
+{
+	returncode = DEFAULT_RETURNCODE;
+
+	if (mapClientsCloak.count(clientId) && mapClientsCloak.at(clientId).iState == STATE_CLOAK_ON)
+	{
+		ObscureSystemList(clientId);
+	}
+}
+
+void __stdcall SystemSwitchOut(uint iClientID, FLPACKET_SYSTEM_SWITCH_OUT& switchOutPacket)
+{
+	returncode = DEFAULT_RETURNCODE;
+
+	// in case of SERVER_PACKET hooks, first argument is junk data before it gets processed by the server. 
+	uint packetClient = HkGetClientIDByShip(switchOutPacket.shipId);
+	if (packetClient)
+	{
+		jumpingPlayers[packetClient] = 1000;
+	}
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /** Functions to hook */
@@ -948,9 +1139,13 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkTimerCheckKick, PLUGIN_HkTimerCheckKick, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkCb_AddDmgEntry, PLUGIN_HkCb_AddDmgEntry, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExplosionHit, PLUGIN_ExplosionHit, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&JumpInComplete_AFTER, PLUGIN_HkIServerImpl_JumpInComplete_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Dock_Call, PLUGIN_HkCb_Dock_Call, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SwitchOutComplete, PLUGIN_HkIServerImpl_SystemSwitchOutComplete_AFTER, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SystemSwitchOut, PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT, 0));
+	
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Plugin_Communication_CallBack, PLUGIN_Plugin_Communication, 0));
 
 
 	return p_PI;

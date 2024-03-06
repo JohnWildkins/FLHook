@@ -4,16 +4,18 @@
 
 int __stdcall DisconnectPacketSent(uint iClientID)
 {
-	try {
+	LOG_CORE_TIMER_START
+	TRY_HOOK {
 		uint iShip = 0;
 		pub::Player::GetShip(iClientID, iShip);
 		if (set_iDisconnectDelay && iShip)
 		{ // in space
 			ClientInfo[iClientID].tmF1TimeDisconnect = timeInMS() + set_iDisconnectDelay;
+			CALL_PLUGINS_NORET(PLUGIN_DelayedDisconnect, , (uint, uint), (iClientID, iShip));
 			return 0; // don't pass on
 		}
-	}
-	catch (...) { LOG_EXCEPTION }
+	} CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 	return 1; // pass on
 }
 

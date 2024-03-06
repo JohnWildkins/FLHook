@@ -42,7 +42,9 @@ bool set_bEnableRenameMe = false;
 bool set_bEnableMoveChar = false;
 bool set_bEnableRestart = false;
 bool set_bEnableGiveCash = false;
+bool set_bEnableDeathMsg = false;
 bool set_bLocalTime = false;
+unordered_set<uint> doNotDisturbClients;
 
 /// Local chat range
 float set_iLocalChatRange = 9999;
@@ -51,6 +53,14 @@ float set_iDockBroadcastRange = 9999;
 float set_fSpinProtectMass;
 float set_fSpinImpulseMultiplier;
 
+float set_fMinCLootRoadkillSpeed = 25.0f;
+
+unordered_map<uint, float> jumpLimitMap;
+
+// set of ships which cannot use TradeLane, and are blocked
+// from forming on other ships to bypass the block
+unordered_set<uint> setLaneAndFormationBannedShips;
+bool supressDockMsg[255];
 /** A return code to indicate to FLHook if we want the hook processing to continue. */
 PLUGIN_RETURNCODE returncode;
 
@@ -114,19 +124,39 @@ void LoadSettings()
 	set_bEnablePimpShip = IniGetB(scPluginCfgFile, "General", "EnablePimpShip", false);
 	set_bEnableRestart = IniGetB(scPluginCfgFile, "General", "EnableRestart", false);
 	set_bEnableGiveCash = IniGetB(scPluginCfgFile, "General", "EnableGiveCash", false);
+	set_bEnableDeathMsg = IniGetB(scPluginCfgFile, "General", "EnableDeathMsg", false);
 
 	set_fSpinProtectMass = IniGetF(scPluginCfgFile, "General", "SpinProtectionMass", 180.0f);
 	set_fSpinImpulseMultiplier = IniGetF(scPluginCfgFile, "General", "SpinProtectionMultiplier", -1.0f);
 
 	set_iLocalChatRange = IniGetF(scPluginCfgFile, "General", "LocalChatRange", 0);
 	set_iDockBroadcastRange = IniGetF(scPluginCfgFile, "General", "DockBroadcastRange", 0);
+	
+	set_fMinCLootRoadkillSpeed = IniGetF(scPluginCfgFile, "General", "MinCLootRoadkillSpeed", 25.0f);
 
 	set_bLocalTime = IniGetB(scPluginCfgFile, "General", "LocalTime", false);
 
+	INI_Reader ini;
+	if (ini.open(scPluginCfgFile.c_str(), false))
+	{
+		while (ini.read_header())
+		{
+			if (ini.is_header("TradeLaneBan"))
+			{
+				while (ini.read_value())
+				{
+					if (ini.is_value("ship"))
+					{
+						setLaneAndFormationBannedShips.insert(CreateID(ini.get_value_string(0)));
+					}
+				}
+			}
+		}
+		ini.close();
+	}
 	//JDDisruptAmmo = CreateID("dsy_torpedo_jd_ammo");
 
 	ZoneUtilities::ReadUniverse();
-	EquipmentUtilities::ReadIniNicknames();
 	Rename::LoadSettings(scPluginCfgFile);
 	GiveCash::LoadSettings(scPluginCfgFile);
 	MiscCmds::LoadSettings(scPluginCfgFile);
@@ -161,7 +191,6 @@ void ClearClientInfo(uint iClientID)
 void HkTimer()
 {
 	returncode = DEFAULT_RETURNCODE;
-	MiscCmds::Timer();
 	HyperJump::Timer();
 	CargoDrop::Timer();
 	Message::Timer();
@@ -171,11 +200,10 @@ void HkTimer()
 
 /// Hook for ship distruction. It's easier to hook this than the PlayerDeath one.
 /// Drop a percentage of cargo + some loot representing ship bits.
-void SendDeathMsg(const wstring &wscMsg, uint iSystem, uint iClientIDVictim, uint iClientIDKiller)
+void SendDeathMsg(const wstring &wscMsg, uint& iSystem, uint& iClientIDVictim, uint& iClientIDKiller)
 {
 	returncode = NOFUNCTIONCALL;
 
-	HyperJump::SendDeathMsg(wscMsg, iSystem, iClientIDVictim, iClientIDKiller);
 	CargoDrop::SendDeathMsg(wscMsg, iSystem, iClientIDVictim, iClientIDKiller);
 	Message::SendDeathMsg(wscMsg, iSystem, iClientIDVictim, iClientIDKiller);
 
@@ -183,39 +211,51 @@ void SendDeathMsg(const wstring &wscMsg, uint iSystem, uint iClientIDVictim, uin
 	const wchar_t *killer = (const wchar_t*)Players.GetActiveCharacterName(iClientIDKiller);
 	if (victim && killer)
 	{
-		AddLog("NOTICE: Death charname=%s killername=%s system=%08x",
-			wstos(victim).c_str(), wstos(killer).c_str(), iSystem);
+		auto systemInfo = Universe::get_system(iSystem);
+		AddLog("NOTICE: Death charname=%s killername=%s system=%s",
+			wstos(victim).c_str(), wstos(killer).c_str(), systemInfo->nickname);
 	}
 }
 
-/*
-void __stdcall SPMunitionCollision(struct SSPMunitionCollisionInfo const & ci, unsigned int iClientID)
+bool CheckJumpCargo(uint clientId, uint jumpObjId)
 {
-	returncode = DEFAULT_RETURNCODE;
-	// If this is not a ship, do no other processing.
-	if (ci.dwTargetShip == 0)
-		return;
-
-	if (JDDisruptAmmo == ci.iProjectileArchID)
+	if (ClientInfo[clientId].cship->bayState != Closed)
 	{
-		uint ship = ci.dwTargetShip;
-		uint targetid = HkGetClientIDByShip(ship);
+		PrintUserCmdText(clientId, L"Cannot jump while the cargo bay isn't fully closed.");
+		return false;
+	}
 
-		if (targetid)
+	uint archId;
+	pub::SpaceObj::GetSolarArchetypeID(jumpObjId, archId);
+	
+	if (!jumpLimitMap.count(archId))
+	{
+		return true;
+	}
+
+	CEquipTraverser tr(Cargo);
+	CEquipManager* manager = &ClientInfo[clientId].cship->equip_manager;
+	CECargo* eq;
+	float volumeUsed = 0.0f;
+	while (eq = reinterpret_cast<CECargo*>(manager->Traverse(tr)))
+	{
+		bool flag;
+		pub::IsCommodity(eq->archetype->iArchID, flag);
+		if (flag)
 		{
-			HyperJump::Disrupt(targetid, iClientID);
-		}
-		else
-		{
-			HkMsgU(L"Debug: targetid invalid HyperJump::Disrupt");
+			volumeUsed += eq->count * eq->archetype->fVolume;
 		}
 	}
 
-	returncode = DEFAULT_RETURNCODE;
-	return;
-}
-*/
+	float holdLimit = jumpLimitMap.at(archId);
+	if (volumeUsed >= holdLimit)
+	{
+		PrintUserCmdText(clientId, L"You cannot jump through! You're carrying: %u cargo, allowed: %u", static_cast<uint>(volumeUsed), static_cast<uint>(holdLimit));
+		return false;
+	}
 
+	return true;
+}
 
 static bool IsDockingAllowed(uint iShip, uint iDockTarget, uint iClientID)
 {
@@ -240,7 +280,7 @@ static bool IsDockingAllowed(uint iShip, uint iDockTarget, uint iClientID)
 	if (fAttitude <= -0.55f)
 	{
 		pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("info_access_denied"));
-		wstring wscMsg[3] = {
+		const static wstring wscMsg[3] = {
 			L"Access Denied! Request to dock denied. We don't want your kind around here.",
 			L"Access Denied! Docking request rejected. Your papers are no good.",
 			L"Access Denied! You can't dock here. Your reputation stinks."
@@ -290,48 +330,83 @@ string GetUserFilePath(const wstring &wscCharname, const string &scExtension)
 
 namespace HkIEngine
 {
-	int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget, int iCancel, enum DOCK_HOST_RESPONSE response)
+	int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget, int& dockPort, enum DOCK_HOST_RESPONSE& response)
 	{
 		returncode = DEFAULT_RETURNCODE;
 
-		uint iClientID = HkGetClientIDByShip(iShip);
+		if ((response == PROCEED_DOCK || response == DOCK) && dockPort != -1)
+		{
+			uint iClientID = HkGetClientIDByShip(iShip);
 
-		if (iClientID == 0)
-		{
-			// NPC call, let the game handle it
-			return 0;
-		}
-		else
-		{
-			if (Players[iClientID].fRelativeHealth == 0.0f && (iCancel != -1)) {
-				pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("dock_disallowed"));
-				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+			if (iClientID == 0)
+			{
+				// NPC call, let the game handle it
+				return 0;
+			}
+			if (Players[iClientID].fRelativeHealth == 0.0f) {
+				dockPort = -1;
+				response = ACCESS_DENIED;
 				return 0;
 			}
 			uint iTypeID;
 			pub::SpaceObj::GetType(iDockTarget, iTypeID);
-			if (iTypeID == OBJ_DOCKING_RING || iTypeID == OBJ_STATION)
+			if (iTypeID & (DockingRing | Station))
 			{
 				if (!IsDockingAllowed(iShip, iDockTarget, iClientID))
 				{
 					//AddLog("INFO: Docking suppressed docktarget=%u charname=%s", iDockTarget, wstos(Players.GetActiveCharacterName(iClientID)).c_str());
-					returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-					return 0;
-				}
-
-				if (response == PROCEED_DOCK)
-				{
-					// Print out a message when a player ship docks.
-					wstring wscMsg = L"%time Traffic control alert: %player has requested to dock";
-					wscMsg = ReplaceStr(wscMsg, L"%time", GetTimeString(set_bLocalTime));
-					wscMsg = ReplaceStr(wscMsg, L"%player", (const wchar_t*)Players.GetActiveCharacterName(iClientID));
-					PrintLocalUserCmdText(iClientID, wscMsg, set_iDockBroadcastRange);
+					dockPort = -1;
+					response = ACCESS_DENIED;
+					return 1;
 				}
 			}
 
-			SystemSensor::Dock_Call(iShip, iDockTarget, iCancel, response);
+			if (iTypeID & (JumpGate | JumpHole))
+			{
+				if (!CheckJumpCargo(iClientID, iDockTarget))
+				{
+					dockPort = -1;
+					response = ACCESS_DENIED;
+					return 1;
+				}
+			}
+			if (!HyperJump::Dock_Call(iShip, iDockTarget))
+			{
+				dockPort = -1;
+				response = DOCK_DENIED;
+				return 0;
+			}
+			SystemSensor::Dock_Call(iTypeID, iClientID);
+
 			return 0;
 		}
+		if (response == DOCK && dockPort == -1)
+		{
+			uint iClientID = HkGetClientIDByShip(iShip);
+
+			if (iClientID == 0)
+			{
+				// NPC call, let the game handle it
+				return 0;
+			}
+			if (supressDockMsg[iClientID])
+			{
+				supressDockMsg[iClientID] = false;
+				return 0;
+			}
+			uint type;
+			pub::SpaceObj::GetType(iDockTarget, type);
+			if (!(type & (Station | DockingRing)))
+			{
+				return 0;
+			}
+
+			wstring wscMsg = L"%time Traffic control alert: %player has docked";
+			wscMsg = ReplaceStr(wscMsg, L"%time", GetTimeString(set_bLocalTime));
+			wscMsg = ReplaceStr(wscMsg, L"%player", (const wchar_t*)Players.GetActiveCharacterName(iClientID));
+			PrintLocalUserCmdText(iClientID, wscMsg, set_iDockBroadcastRange);
+		}
+		return 0;
 	}
 }
 
@@ -408,40 +483,110 @@ namespace HkIServerImpl
 		}
 	}
 
-	void __stdcall CreateGuided(uint iClientID, FLPACKET_CREATEGUIDED& createGuidedPacket)
-	{
-		uint clientID = HkGetClientIDByShip(createGuidedPacket.iOwner);
-		if (!clientID)
-			return;
-		uint targetId;
-		pub::SpaceObj::GetTarget(createGuidedPacket.iOwner, targetId);
-		if (targetId)
-			return;
-
-		const auto& projectile = reinterpret_cast<CGuided*>(CObject::Find(createGuidedPacket.iProjectileId, CObject::CGUIDED_OBJECT));
-		projectile->set_target(nullptr);
-	}
-
-	void __stdcall RequestEvent(int iIsFormationRequest, unsigned int iShip, unsigned int iDockTarget, unsigned int p4, unsigned long p5, unsigned int iClientID)
+	void __stdcall RequestCancel(int iType, unsigned int requestFrom, unsigned int requestTo, unsigned long parameter, unsigned int iClientID)
 	{
 		returncode = DEFAULT_RETURNCODE;
-		if (iClientID)
+
+		if (!iClientID)
 		{
-			if (!iIsFormationRequest)
+			return;
+		}
+
+		if (iType == 0)
+		{
+			supressDockMsg[iClientID] = true;
+		}
+		HyperJump::RequestCancel(iType, requestFrom, requestTo);
+	}
+
+	void __stdcall UseItemRequest(SSPUseItem const& p1, unsigned int iClientID)
+	{
+		const static uint NANOBOT_ARCH_ID = CreateID("ge_s_repair_01");
+		const static float NANOBOT_HEAL_AMOUNT = Archetype::GetEquipment(NANOBOT_ARCH_ID)->fHitPoints;
+
+		returncode = DEFAULT_RETURNCODE;
+
+		float currHitPts, maxHitPts;
+		pub::SpaceObj::GetHealth(p1.iUserShip, currHitPts, maxHitPts);
+		if (currHitPts > 0)
+		{
+			return;
+		}
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		for (auto& eq : Players[iClientID].equipDescList.equip)
+		{
+			if (eq.sID == p1.sItemId)
 			{
-				uint iTargetTypeID;
-				pub::SpaceObj::GetType(iDockTarget, iTargetTypeID);
-				if (iTargetTypeID == OBJ_DOCKING_RING || iTargetTypeID == OBJ_STATION)
+				if (eq.iArchID == NANOBOT_ARCH_ID)
 				{
-					if (!IsDockingAllowed(iShip, iDockTarget, iClientID))
+					uint amountToUse = static_cast<uint>(ceil((maxHitPts * 1.5) / NANOBOT_HEAL_AMOUNT));
+					if (amountToUse < p1.sAmountUsed)
 					{
-						//AddLog("INFO: Docking suppressed docktarget=%u charname=%s", iDockTarget, wstos(Players.GetActiveCharacterName(iClientID)).c_str());
-						returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-						return;
+						pub::Player::RemoveCargo(iClientID, p1.sItemId, amountToUse);
+						pub::SpaceObj::SetRelativeHealth(p1.iUserShip, 1.0f);
+					}
+					else
+					{
+						pub::Audio::PlaySoundEffect(iClientID, CreateID("ui_select_reject"));
 					}
 				}
+				break;
 			}
 		}
+	}
+
+	void __stdcall RequestEvent(int iEventType, unsigned int iShip, unsigned int iTargetObj, unsigned int p4, unsigned long p5, unsigned int iClientID)
+	{
+		returncode = DEFAULT_RETURNCODE;
+		if (!iClientID)
+		{
+			return;
+		}
+
+		if (iEventType == 0) // station dock
+		{
+			uint iTargetTypeID;
+			pub::SpaceObj::GetType(iTargetObj, iTargetTypeID);
+			if (iTargetTypeID & (DockingRing | Station)
+				&& !IsDockingAllowed(iShip, iTargetObj, iClientID))
+			{
+				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+			}
+		}
+		else if (iEventType == 2) // trade lane dock
+		{
+			float shieldHp, shieldMax;
+			bool shieldUp;
+			pub::SpaceObj::GetShieldHealth(iTargetObj, shieldHp, shieldMax, shieldUp);
+			if (shieldMax > 0.0f && !shieldUp)
+			{
+				pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnvoice_trade_lane_disrupted"));
+				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+			}
+			else if (setLaneAndFormationBannedShips.find(Players[iClientID].iShipArchetype) != setLaneAndFormationBannedShips.end())
+			{
+				pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_trade_lane_access_denied"));
+				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+			}
+		}
+	}
+
+	void __stdcall RequestEvent_AFTER(int iEventType, unsigned int iShip, unsigned int iTargetObj, unsigned int p4, unsigned long p5, unsigned int iClientID)
+	{
+		returncode = DEFAULT_RETURNCODE;
+
+		if (iClientID)
+		{
+			if (iEventType == 1 // formation request
+				&& setLaneAndFormationBannedShips.find(Players[iClientID].iShipArchetype) != setLaneAndFormationBannedShips.end())
+			{
+				pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_formation_request_denied"));
+				// values copied from vanilla 'leaving formation' callout
+				// Params are: eventType, fromSpaceObjId, toSpaceObjId, dunno, senderClientId;
+				Server.RequestCancel(iEventType, iShip, iShip, UINT_MAX, iClientID);
+			}
+		}
+		
 	}
 
 	void __stdcall PlayerLaunch(unsigned int iShip, unsigned int iClientID)
@@ -460,7 +605,8 @@ namespace HkIServerImpl
 
 	void __stdcall PlayerLaunch_AFTER(unsigned int iShip, unsigned int iClientID)
 	{
-		HyperJump::CheckForMatrix(iClientID);
+		HyperJump::InitJumpDriveInfo(iClientID, true);
+		MiscCmds::PlayerLaunch(iClientID);
 		returncode = DEFAULT_RETURNCODE;
 	}
 
@@ -472,15 +618,17 @@ namespace HkIServerImpl
 		Message::BaseEnter(iBaseID, iClientID);
 		GiveCash::BaseEnter(iBaseID, iClientID);
 		PurchaseRestrictions::BaseEnter(iBaseID, iClientID);
-		MiscCmds::BaseEnter(iBaseID, iClientID);
+		HyperJump::ClearClientInfo(iClientID);
 	}
 
 	void __stdcall BaseEnter_AFTER(unsigned int iBaseID, unsigned int iClientID)
 	{
+		returncode = DEFAULT_RETURNCODE;
 		float fValue;
+		MiscCmds::BaseEnter(iBaseID, iClientID);
 		if (HKGetShipValue((const wchar_t*)Players.GetActiveCharacterName(iClientID), fValue) == HKE_OK)
 		{
-			if (fValue > 2100000000.0f)
+			if (fValue > 2'100'000'000.0f)
 			{
 				AddLog("ERROR: Possible corrupt ship charname=%s asset_value=%0.0f", wstos((const wchar_t*)Players.GetActiveCharacterName(iClientID)).c_str(), fValue);
 			}
@@ -499,6 +647,12 @@ namespace HkIServerImpl
 		ClearClientInfo(iClientID);
 	}
 
+	void DelayedDisconnect(uint client, uint ship)
+	{
+		returncode = DEFAULT_RETURNCODE;
+		Message::DelayedDisconnect(client);
+	}
+
 	void __stdcall CharacterSelect_AFTER(struct CHARACTER_ID const &charId, unsigned int iClientID)
 	{
 		returncode = DEFAULT_RETURNCODE;
@@ -509,26 +663,43 @@ namespace HkIServerImpl
 	void __stdcall JumpInComplete_AFTER(unsigned int iSystem, unsigned int iShip)
 	{
 		returncode = DEFAULT_RETURNCODE;
+
+		// Make player damageable once the ship has jumped in system.
+		pub::SpaceObj::SetInvincible(iShip, false, false, 0);
+
 		uint iClientID = HkGetClientIDByShip(iShip);
 		if (iClientID)
 		{
 			AntiJumpDisconnect::JumpInComplete(iSystem, iShip, iClientID);
 			SystemSensor::JumpInComplete(iSystem, iShip, iClientID);
+			HyperJump::JumpInComplete(iShip);
+			HyperJump::SetJumpInFuse(iClientID);
+			HyperJump::SetJumpInPvPInvulnerability(iClientID);
 		}
-
-		// Make player damageable once the ship has jumped in system.
-		pub::SpaceObj::SetInvincible(iShip, false, false, 0);
 	}
 
 	void __stdcall SystemSwitchOutComplete(unsigned int iShip, unsigned int iClientID)
 	{
 		returncode = DEFAULT_RETURNCODE;
+		if (iClientID != HkGetClientIDByShip(iShip))
+		{
+			return;
+		}
 		// Make player invincible to fix JHs/JGs near mine fields sometimes
 		// exploding player while jumping (in jump tunnel)
 		pub::SpaceObj::SetInvincible(iShip, true, true, 0);
-		AntiJumpDisconnect::SystemSwitchOutComplete(iShip, iClientID);
-		if (HyperJump::SystemSwitchOutComplete(iShip, iClientID))
-			returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		HyperJump::SystemSwitchOutComplete(iShip, iClientID);
+	}
+
+	void __stdcall SystemSwitchOut(uint iClientID, FLPACKET_SYSTEM_SWITCH_OUT& switchOutPacket)
+	{
+		returncode = DEFAULT_RETURNCODE;
+		if (iClientID != HkGetClientIDByShip(switchOutPacket.shipId))
+		{
+			return;
+		}
+		HyperJump::SystemSwitchOut(iClientID, switchOutPacket.jumpObjectId);
+		AntiJumpDisconnect::SystemSwitchOut(iClientID);
 	}
 
 	void __stdcall SPObjCollision(struct SSPObjCollisionInfo const &ci, unsigned int iClientID)
@@ -536,8 +707,29 @@ namespace HkIServerImpl
 		returncode = DEFAULT_RETURNCODE;
 
 		// If spin protection is off, do nothing.
-		if (set_fSpinProtectMass == -1.0f)
+		if (!ci.dwTargetShip || set_fSpinProtectMass == -1.0f)
+		{
 			return;
+		}
+		
+		uint type;
+		pub::SpaceObj::GetType(ci.dwTargetShip, type);
+
+		uint client_ship;
+		pub::Player::GetShip(iClientID, client_ship);
+
+		if (type == Loot)
+		{
+			Vector V1, V2;
+			pub::SpaceObj::GetMotion(client_ship, V1, V2);
+			float playerSpeed = sqrtf(V1.x * V1.x + V1.y * V1.y + V1.z * V1.z);
+			if (playerSpeed > set_fMinCLootRoadkillSpeed)
+			{
+				pub::SpaceObj::Destroy(ci.dwTargetShip, DestroyType::FUSE);
+				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+			}
+			return;
+		}
 
 		// If the target is not a player, do nothing.
 		//uint iClientIDTarget = HkGetClientIDByShip(ci.dwTargetShip);
@@ -546,9 +738,6 @@ namespace HkIServerImpl
 
 		float target_mass;
 		pub::SpaceObj::GetMass(ci.dwTargetShip, target_mass);
-
-		uint client_ship;
-		pub::Player::GetShip(iClientID, client_ship);
 
 		float client_mass;
 		pub::SpaceObj::GetMass(client_ship, client_mass);
@@ -690,10 +879,10 @@ namespace HkIServerImpl
 
 	void __stdcall ReqChangeCash(int iMoneyDiff, unsigned int iClientID)
 	{
+		returncode = DEFAULT_RETURNCODE;
 		if (Rename::IsLockedShip(iClientID, 2))
 			PurchaseRestrictions::ReqChangeCashHappenedStatus(iClientID, true);
 
-		returncode = DEFAULT_RETURNCODE;
 		if (PurchaseRestrictions::ReqChangeCash(iMoneyDiff, iClientID))
 		{
 			returncode = SKIPPLUGINS_NOFUNCTIONCALL;
@@ -862,16 +1051,20 @@ namespace HkIServerImpl
 	// Save after jettison to reduce chance of duplication on crash
 	void __stdcall JettisonCargo(unsigned int iClientID, struct XJettisonCargo const &objs)
 	{
+		returncode = DEFAULT_RETURNCODE;
 		if (mapSaveTimes[iClientID] == 0)
 		{
 			mapSaveTimes[iClientID] = GetTimeInMS() + 60000;
 		}
 	}
 
-	void __stdcall SetTarget(uint uClientID, struct XSetTarget const &p2)
+	void __stdcall SetTarget(uint uClientID, struct XSetTarget const& p2)
 	{
 		returncode = DEFAULT_RETURNCODE;
-		Message::SetTarget(uClientID, p2);
+		if (!p2.iSlot)
+		{
+			Message::SetTarget(uClientID, p2);
+		}
 	}
 
 	void __stdcall CharacterInfoReq(unsigned int iClientID, bool p2)
@@ -929,20 +1122,16 @@ void __stdcall HkCb_SendChat(uint iClientID, uint iTo, uint iSize, void *pRDL)
 	}
 }
 
-int __stdcall HkCB_MissileTorpHit(char *ECX, char *p1, DamageList *dmg)
+void __stdcall HkCB_MissileTorpHit(IObjRW* iobj, ExplosionDamageEvent* explosion, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
 
-	char *szP;
-	memcpy(&szP, ECX + 0x10, 4);
-	uint iClientID;
-	memcpy(&iClientID, szP + 0xB4, 4);
+	uint iClientID = ((CShip*)iobj->cobj)->ownerPlayer;
 
 	if (iClientID)
 	{
-		HyperJump::MissileTorpHit(iClientID, dmg);
+		HyperJump::ExplosionHit(iClientID, dmg);
 	}
-	return 0;
 }
 
 void __stdcall RequestBestPath(unsigned int p1, DWORD *p2, int p3)
@@ -983,6 +1172,7 @@ USERCMD UserCmds[] =
 	{ L"/showitems",	PimpShip::UserCmd_ShowItems,	L"Usage: /showitems" },
 	{ L"/setitem",		PimpShip::UserCmd_ChangeItem,	L"Usage: /setitem" },
 	{ L"/renameme",		Rename::UserCmd_RenameMe,		L"Usage: /renameme <charname> [password]" },
+	{ L"/rename",		Rename::UserCmd_RenameMe,		L"Usage: /rename <charname> [password]" },
 	{ L"/movechar",		Rename::UserCmd_MoveChar,		L"Usage: /movechar <charname> <code>" },
 	{ L"/set movecharcode",	Rename::UserCmd_SetMoveCharCode,	L"Usage: /set movecharcode <code>" },
 	{ L"/restart",		Restart::UserCmd_Restart,		L"Usage: /restart <faction>" },
@@ -1073,6 +1263,7 @@ USERCMD UserCmds[] =
 	{ L"/factioninvite",Message::UserCmd_FactionInvite, L"Usage: /factioninvite <tag> or /fi ..."},
 	{ L"/fi",			Message::UserCmd_FactionInvite, L"Usage: /factioninvite <tag> or /fi ..."},
 	{ L"/lastpm",       Message::UserCmd_ShowLastPMSender, L""},
+	{ L"/dnd",			Message::UserCmd_SetDoNotDisturb, L"" },
 	{ L"/set chattime", Message::UserCmd_SetChatTime, L"Usage: /set chattime [on|off]"},
 	{ L"/set dietime",  Message::UserCmd_SetDeathTime, L"Usage: /set dietime [on|off]"},
 	{ L"/help",			Message::UserCmd_CustomHelp, L""},
@@ -1091,36 +1282,16 @@ USERCMD UserCmds[] =
 	{ L"/lights*",		MiscCmds::UserCmd_Lights, L"Usage: /lights"},
 	//{ L"/selfdestruct",	MiscCmds::UserCmd_SelfDestruct, L"Usage: /selfdestruct"},
 	//{ L"/selfdestruct*",MiscCmds::UserCmd_SelfDestruct, L"Usage: /selfdestruct"},
-	{ L"/shields",		MiscCmds::UserCmd_Shields, L"Usage: /shields"},
-	{ L"/shields*",		MiscCmds::UserCmd_Shields, L"Usage: /shields"},
+	{ L"/shields",		MiscCmds::UserCmd_Shields, L"Usage: /shields [drop]"},
+	{ L"/shields*",		MiscCmds::UserCmd_Shields, L"Usage: /shields [drop]"},
 	//{ L"/ss",		    MiscCmds::UserCmd_Screenshot, L"Usage: /ss"},
-	{ L"/survey",		HyperJump::UserCmd_Survey, L"Usage: /survey"},
-	{ L"/showcoords",		Message::UserCmd_ShowCoords, L"Usage: /savecoords <n>"},
-	{ L"/savecoords",		Message::UserCmd_SaveCoords, L"Usage: /savecoords <n> <text>"},
-	{ L"/c0",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c1",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c2",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c3",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c4",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c5",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c6",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c7",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c8",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/c9",		Message::UserCmd_LoadCoords, L"Usage: /cn (n=0-9)"},
-	{ L"/setcoords",	HyperJump::UserCmd_SetCoords, L"Usage: /setcoords"},
-	{ L"/jump",			HyperJump::UserCmd_ActivateJumpDrive, L"Usage: /jump"},
-	{ L"/jump*",		HyperJump::UserCmd_ActivateJumpDrive, L"Usage: /jump"},
-	{ L"/beacon",		HyperJump::UserCmd_DeployBeacon, L"Usage: /beacon"},
-	{ L"/beacon*",		HyperJump::UserCmd_DeployBeacon, L"Usage: /beacon"},
-	{ L"/jumpbeacon",		HyperJump::UserCmd_JumpBeacon, L"Usage: /jumpbeacon"},
-	{ L"/jumpbeacon*",		HyperJump::UserCmd_JumpBeacon, L"Usage: /jumpbeacon"},
-	{ L"/charge",		HyperJump::UserCmd_ChargeJumpDrive, L"Usage: /charge"},
-	{ L"/charge*",		HyperJump::UserCmd_ChargeJumpDrive, L"Usage: /charge"},
-	{ L"/jumpsys",		HyperJump::UserCmd_ListJumpableSystems, L"Usage: /jumpsys"},
-	{ L"/showscan",		SystemSensor::UserCmd_ShowScan, L"Usage: /showscan or /scan <charname>"},
-	{ L"/showscan$",	SystemSensor::UserCmd_ShowScan, L"Usage: /showscan$ or /scanid <clientid>"},
-	{ L"/scan",			SystemSensor::UserCmd_ShowScan, L"Usage: /showscan or /scan <charname>"},
-	{ L"/scanid",		SystemSensor::UserCmd_ShowScan, L"Usage: /showscan$ or /scanid <clientid>"},
+	{ L"/setsector",	HyperJump::UserCmd_SetSector, L"Usage: /setsector <number>"},
+	{ L"/jump",			HyperJump::UserCmd_Jump, L"Usage: /jump <systemName/blind/stop/list>"},
+	{ L"/jumpbeacon",	HyperJump::UserCmd_JumpBeacon, L"Usage: /jumpbeacon <playername/playerID>" },
+	{ L"/acceptbeacon",	HyperJump::UserCmd_AcceptBeaconRequest, L"Usage: /acceptbeacon <playername/playerID>" },
+	{ L"/canjump",		HyperJump::UserCmd_IsSystemJumpable, L"Usage: /canjump <systemname>" },
+	{ L"/canbeacon",	HyperJump::UserCmd_CanBeaconJumpToPlayer, L"Usage: /canbeacon <playername/playerID>" },
+	{ L"/scan",			SystemSensor::UserCmd_ShowScan, L"Usage: /scan <charname/playerID>"},
 	{ L"/net",			SystemSensor::UserCmd_Net, L"Usage: /net [all|jumponly|off]"},
 	{ L"/maketag",		Rename::UserCmd_MakeTag, L"Usage: /maketag <tag> <master password> <description>"},
 	{ L"/droptag",		Rename::UserCmd_DropTag, L"Usage: /droptag <tag> <master password>"},
@@ -1478,18 +1649,6 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring &wscCmd)
 		HyperJump::AdminCmd_Chase(cmds, cmds->ArgCharname(1));
 		return true;
 	}
-	else if (IS_CMD("lrs"))
-	{
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		HyperJump::AdminCmd_ListRestrictedShips(cmds);
-		return true;
-	}
-	else if (IS_CMD("makecoord"))
-	{
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		HyperJump::AdminCmd_MakeCoord(cmds);
-		return true;
-	}
 	else if (IS_CMD("authchar"))
 	{
 		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
@@ -1654,6 +1813,16 @@ void Plugin_Communication_CallBack(PLUGIN_MESSAGE msg, void* data)
 			SystemSensor::JumpInComplete(info->iSystemID, info->iShipID, iClientID);
 		}
 	}
+	else if (msg == CUSTOM_JUMP_CALLOUT)
+	{
+		CUSTOM_JUMP_CALLOUT_STRUCT* jumpData = reinterpret_cast<CUSTOM_JUMP_CALLOUT_STRUCT*>(data);
+		HyperJump::ForceJump(*jumpData);
+  }
+	else if (msg == CUSTOM_IN_WARP_CHECK)
+	{
+		CUSTOM_IN_WARP_CHECK_STRUCT* checkData = reinterpret_cast<CUSTOM_IN_WARP_CHECK_STRUCT*>(data);
+		checkData->inWarp = AntiJumpDisconnect::IsInWarp(checkData->clientId);
+	}
 	return;
 }
 
@@ -1673,16 +1842,20 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::Startup, PLUGIN_HkIServerImpl_Startup, 10));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::Startup_AFTER, PLUGIN_HkIServerImpl_Startup_AFTER, 10));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::Login, PLUGIN_HkIServerImpl_Login, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::RequestCancel, PLUGIN_HkIServerImpl_RequestCancel, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::RequestEvent, PLUGIN_HkIServerImpl_RequestEvent, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::RequestEvent_AFTER, PLUGIN_HkIServerImpl_RequestEvent_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::PlayerLaunch, PLUGIN_HkIServerImpl_PlayerLaunch, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::PlayerLaunch_AFTER, PLUGIN_HkIServerImpl_PlayerLaunch_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::BaseEnter, PLUGIN_HkIServerImpl_BaseEnter, 0));
 	// check causes lag: p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::BaseEnter_AFTER, PLUGIN_HkIServerImpl_BaseEnter_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::LocationEnter, PLUGIN_HkIServerImpl_LocationEnter, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::DisConnect, PLUGIN_HkIServerImpl_DisConnect, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::DelayedDisconnect, PLUGIN_DelayedDisconnect, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::CharacterSelect_AFTER, PLUGIN_HkIServerImpl_CharacterSelect_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::JumpInComplete_AFTER, PLUGIN_HkIServerImpl_JumpInComplete_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::SystemSwitchOutComplete, PLUGIN_HkIServerImpl_SystemSwitchOutComplete, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::SystemSwitchOut, PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::SPObjCollision, PLUGIN_HkIServerImpl_SPObjCollision, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::GFGoodBuy, PLUGIN_HkIServerImpl_GFGoodBuy, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::ReqAddItem, PLUGIN_HkIServerImpl_ReqAddItem, 0));
@@ -1704,14 +1877,14 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::StopTradelane, PLUGIN_HkIServerImpl_StopTradelane, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::CreateNewCharacter, PLUGIN_HkIServerImpl_CreateNewCharacter, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::DestroyCharacter, PLUGIN_HkIServerImpl_DestroyCharacter, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::CreateGuided, PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_CREATEGUIDED, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIServerImpl::UseItemRequest, PLUGIN_HkIServerImpl_SPRequestUseItem, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkIEngine::Dock_Call, PLUGIN_HkCb_Dock_Call, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkCb_SendChat, PLUGIN_HkCb_SendChat, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Help, PLUGIN_UserCmd_Help, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&CmdHelp_Callback, PLUGIN_CmdHelp_Callback, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkCB_MissileTorpHit, PLUGIN_HkCB_MissileTorpHit, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkCB_MissileTorpHit, PLUGIN_ExplosionHit, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&RequestBestPath, PLUGIN_HkIServerImpl_RequestBestPath, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Plugin_Communication_CallBack, PLUGIN_Plugin_Communication, 0));
 	//	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SPMunitionCollision, PLUGIN_HkIServerImpl_SPMunitionCollision, 0));

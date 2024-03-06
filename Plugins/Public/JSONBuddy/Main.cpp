@@ -197,6 +197,7 @@ USERCMD UserCmds[] =
 {
 	{ L"/ping", Condata::UserCmd_Ping, L"Usage: /ping" },
 	{ L"/pingtarget", Condata::UserCmd_PingTarget, L"Usage: /pingtarget" },
+	{ L"/pt", Condata::UserCmd_PingTarget, L"Usage: /pingtarget" },
 };
 
 
@@ -248,20 +249,15 @@ bool UserCmd_Process(uint iClientID, const wstring &wscCmd)
 /** Clean up when a client disconnects */
 void ClearClientInfo(uint iClientID)
 {
+	returncode = DEFAULT_RETURNCODE;
 	Condata::ClearClientInfo(iClientID);
 	mapActivityData.erase(iClientID);
-	returncode = DEFAULT_RETURNCODE;
-}
-
-void __stdcall BaseEnter_AFTER(unsigned int iBaseID, unsigned int iClientID)
-{
-	//PrintUserCmdText(iClientID, L"Cleared info");
 }
 
 void __stdcall PlayerLaunch(unsigned int iShip, unsigned int client)
 {
+	returncode = DEFAULT_RETURNCODE;
 	Condata::PlayerLaunch(iShip, client);
-	//PrintUserCmdText(client, L"Cleared info");
 }
 
 void __stdcall CharacterSelect_AFTER(struct CHARACTER_ID const & cId, unsigned int iClientID)
@@ -303,6 +299,7 @@ void __stdcall CharacterSelect_AFTER(struct CHARACTER_ID const & cId, unsigned i
 
 void _stdcall Disconnect(unsigned int iClientID, enum EFLConnection p2)
 {
+	returncode = DEFAULT_RETURNCODE;
 	ClearClientInfo(iClientID);
 }
 
@@ -312,13 +309,8 @@ void HkTimerJSON()
 	Condata::HkTimerCheckKick();
 
 	//update activity once per minute
-	if (jsontimer == 0)
+	if (!jsontimer)
 	{
-
-	}
-	else if (jsontimer == 1)
-	{
-		jsontimer = 0;;
 		//ConPrint(L"JSONBuddy: Attempting to send data\n");
 		stringstream stream;
 		minijson::object_writer writer(stream);
@@ -397,7 +389,7 @@ void HkTimerJSON()
 		FILE *file = fopen("c:/stats/player_status.json", "w");
 		if (file)
 		{
-			fprintf(file, stream.str().c_str());
+			fprintf(file, "%s", stream.str().c_str());
 			fclose(file);
 		}
 
@@ -411,11 +403,13 @@ void HkTimerJSON()
 
 void UserCmd_Help(uint iClientID, const wstring &wscParam)
 {
+	returncode = DEFAULT_RETURNCODE;
 	Condata::UserCmd_Help(iClientID, wscParam);
 }
 
 void SPObjUpdate(struct SSPObjUpdateInfo const &ui, unsigned int iClientID)
 {
+	returncode = DEFAULT_RETURNCODE;
 	Condata::SPObjUpdate(ui, iClientID);
 }
 
@@ -442,9 +436,8 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&LoadSettings, PLUGIN_LoadSettings, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkTimerJSON, PLUGIN_HkTimerCheckKick, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&PlayerLaunch, PLUGIN_HkIServerImpl_PlayerLaunch, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&PlayerLaunch, PLUGIN_HkIServerImpl_PlayerLaunch_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ClearClientInfo, PLUGIN_ClearClientInfo, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&BaseEnter_AFTER, PLUGIN_HkIServerImpl_BaseEnter_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&CharacterSelect_AFTER, PLUGIN_HkIServerImpl_CharacterSelect_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Disconnect, PLUGIN_HkIServerImpl_DisConnect, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Help, PLUGIN_UserCmd_Help, 0));

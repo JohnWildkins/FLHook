@@ -26,6 +26,7 @@
 #include <string>
 #include <list>
 #include <time.h>
+#include <unordered_map>
 using namespace std;
 
 
@@ -148,10 +149,11 @@ enum HK_ERROR
 
 enum DIEMSGTYPE
 {
-	DIEMSG_ALL = 0,
+	DIEMSG_ALL_NOCONN = 0,
 	DIEMSG_SYSTEM = 1,
 	DIEMSG_NONE = 2,
 	DIEMSG_SELF = 3,
+	DIEMSG_ALL = 4,
 };
 
 enum CHATSIZE
@@ -247,9 +249,10 @@ struct CLIENT_INFO
 	// kill msgs
 	uint		iShip;
 	uint		iShipOld;
-	mstime		tmSpawnTime;
+	mstime		tmProtectedUntil;
 
-	DamageList	dmgLast;
+	uint dmgLastPlayerId;
+	DamageCause dmgLastCause;
 
 	// money cmd
 	list<MONEY_FIX> lstMoneyFix;
@@ -310,6 +313,7 @@ struct CLIENT_INFO
 
 	bool		bSpawnProtected;
 	bool		bUseServersideHitDetection; //used by AC Plugin
+	CShip*		cship;
 	byte		unused_data[128];
 };
 
@@ -478,6 +482,7 @@ IMPORT HK_ERROR HkKick(const wstring &wscCharname);
 IMPORT HK_ERROR HkKickReason(const wstring &wscCharname, const wstring &wscReason);
 IMPORT HK_ERROR HkBan(const wstring &wscCharname, bool bBan);
 IMPORT HK_ERROR HkBeam(const wstring &wscCharname, const wstring &wscBasename);
+IMPORT HK_ERROR HkBeamById(const uint clientId, const uint baseId);
 IMPORT HK_ERROR HkSaveChar(const wstring &wscCharname);
 IMPORT HK_ERROR HkEnumCargo(const wstring &wscCharname, list<CARGO_INFO> &lstCargo, int &iRemainingHoldSize);
 IMPORT HK_ERROR HkRemoveCargo(const wstring &wscCharname, uint iID, int iCount);
@@ -817,7 +822,7 @@ extern IMPORT bool	set_bLogUserCmds;
 extern IMPORT bool	set_bPerfTimer;
 
 
-extern IMPORT list<BASE_INFO> lstBases;
+extern IMPORT unordered_map<uint, BASE_INFO> lstBases;
 
 extern IMPORT CDPClientProxy **g_cClientProxyArray;
 extern IMPORT void *pClient;

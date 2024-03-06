@@ -18,100 +18,171 @@
 #define POPUPDIALOG_BUTTONS_RIGHT_LATER 4
 #define POPUPDIALOG_BUTTONS_CENTER_OK 8
 
+constexpr uint ITEMS_PER_PAGE = 35;
+
+// Separate base help out into pages. FL seems to have a limit of something like 4k per infocard.
+const uint numPages = 4;
+const wstring pages[numPages] = {
+L"<TRA bold=\"true\"/><TEXT>/base help [page]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Show this help page. Specify the page number to see the next page.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base login [password]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Login as base administrator. The following commands are only available if you are logged in as a base administrator.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base addpwd [password] [viewshop], /base rmpwd [password], /base lstpwd</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Add, remove and list administrator passwords for the base. Add 'viewshop' to addpwd to only allow the password to view the shop.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base addtag [tag], /base rmtag [tag], /base lsttag</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Add, remove and list ally tags for the base.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base addhostile [tag], /base rmhostile [tag], /base lsthostile</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Add, remove and list blacklisted tags for the base. They will be shot on sight so use complete tags like =LSF= or IMG| or a shipname like Crunchy_Salad.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base setmasterpwd [old password] [new password]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Set the master password for the base.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base rep [clear]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Set or clear the faction that this base is affiliated with. When setting the affiliation, the affiliation will be that of the player executing the command.</TEXT>",
+
+L"<TRA bold=\"true\"/><TEXT>/bank withdraw [credits], /bank deposit [credits], /bank status</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Withdraw, deposit or check the status of the credits held by the base's bank.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/shop price [item] [price]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Set the [price] of [item].</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/shop stock [item] [min stock] [max stock]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>If the current stock is less than [min stock] then the item cannot be bought by docked ships.</TEXT><PARA/>"
+L"<TEXT>If the current stock is more or equal to [max stock] then the item cannot be sold to the base by docked ships</TEXT><PARA/>"
+L"<TEXT>To prohibit selling to the base of an item by docked ships under all conditions, set [max stock] to 0.</TEXT><PARA/>"
+L"<TEXT>To prohibit buying from the base of an item by docked ships under all conditions, set [min stock] to 0.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/shop remove [item]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Remove the item from the stock list. It cannot be sold to the base by docked ships unless they are base administrators.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/shop [page]</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Show the shop stock list for [page]. There are a maximum of 40 items shown per page.</TEXT>",
+
+L"<TRA bold=\"true\"/><TEXT>/base defensemode</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Control the defense mode for the base.</TEXT><PARA/>"
+L"<TEXT>Defense Mode 1 - Logic: Blacklist > Whitelist > Faction Whitelist > IFF Standing.</TEXT><PARA/>"
+L"<TEXT>Docking Rights: Whitelisted ships only.</TEXT><PARA/><PARA/>"
+L"<TEXT>Defense Mode 2 - Logic: Blacklist > Whitelist > Faction Whitelist > IFF Standing.</TEXT><PARA/>"
+L"<TEXT>Docking Rights: Anyone with good standing.</TEXT><PARA/><PARA/>"
+L"<TEXT>Defense Mode 3 - Logic: Blacklist > Whitelist > Faction Whitelist > Hostile</TEXT><PARA/>"
+L"<TEXT>Docking Rights: Whitelisted ships only.</TEXT><PARA/><PARA/>"
+L"<TEXT>Defense Mode 4 - Logic: Blacklist > Whitelist > Faction Whitelist > Neutral</TEXT><PARA/>"
+L"<TEXT>Docking Rights: Anyone with good standing.</TEXT><PARA/><PARA/>"
+L"<TEXT>Defense Mode 5 - Logic: Blacklist > Whitelist > Faction Whitelist > Neutral</TEXT><PARA/>"
+L"<TEXT>Docking Rights: Whitelisted ships only.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base info</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Set the base's infocard description.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/craft</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Control factory modules to produce various goods and equipment.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base supplies</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Prints Crew, Food, Water, Oxygen and repair material counts.</TEXT>",
+
+L"<TRA bold=\"true\"/><TEXT>/base defmod</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Control defense modules.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base shieldmod</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Control shield modules.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base addfac [aff tag], /base rmfac [aff tag], /base lstfac, /base myfac</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Add, remove and list ally factions for the base. Show your affiliation ID and all available.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base addhfac [aff tag], /base rmhfac [aff tag], /base lsthfac</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Add, remove and list hostile factions for the base.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/build</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Control the construction and destruction of base modules and upgrades.</TEXT><PARA/><PARA/>"
+
+L"<TRA bold=\"true\"/><TEXT>/base setshield</TEXT><TRA bold=\"false\"/><PARA/>"
+L"<TEXT>Sets the vulnerability window starting hour (server time). To set the vulnerability window start to 15:00 server time input `/base setshield 15`.</TEXT><PARA/>"
+L"<TEXT>Can be changed once every 30 days.</TEXT>"
+};
+
 namespace PlayerCommands
 {
-	void BaseHelp(uint client, const wstring &args)
+	static map<wstring, vector<wstring>> modules_recipe_map;
+	static map<wstring, vector<wstring>> factory_recipe_map;
+
+	//pre-generating crafting lists as they will probably be used quite a bit.
+	//paying with memory to save on processing.
+	vector<wstring> GenerateModuleHelpMenu(wstring buildType)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
+		vector<wstring> generatedHelpStringList;
+		for (const auto& recipe : craftListNumberModuleMap[buildType])
+		{
+			wstring currentString = L"|    ";
+			currentString += stows(itos(recipe.first));
+			currentString += L" = ";
+			currentString += recipe.second.infotext.c_str();
+			generatedHelpStringList.emplace_back(currentString);
+		}
+		return generatedHelpStringList;
+	}
+	vector<wstring> GenerateFactoryHelpMenu(wstring craftType)
+	{
+		vector<wstring> generatedHelpStringList;
+		for (const auto& recipe : recipeCraftTypeNumberMap[craftType])
+		{
+			wstring currentString = L"|     ";
+			currentString += stows(itos(recipe.second.shortcut_number));
+			currentString += L" = ";
+			currentString += recipe.second.infotext.c_str();
+			generatedHelpStringList.emplace_back(currentString.c_str());
+		}
+		return generatedHelpStringList;
+	}
+
+	void PopulateHelpMenus()
+	{
+		for (const auto& buildType : buildingCraftLists)
+		{
+			modules_recipe_map[buildType] = GenerateModuleHelpMenu(buildType);
+		}
+		for (const auto& craftType : recipeCraftTypeNameMap)
+		{
+			factory_recipe_map[craftType.first] = GenerateFactoryHelpMenu(craftType.first);
+		}
+	}
+
+	bool checkBaseAdminAccess(PlayerBase* base, uint client)
+	{
+		if (!base)
+		{
+			PrintUserCmdText(client, L"ERR Not in player base");
+			return false;
+		}
+
+		if (!clients[client].admin)
+		{
+			PrintUserCmdText(client, L"ERR Access denied");
+			return false;
+		}
+		return true;
+	}
+
+	void BaseHelp(uint client, const wstring& args)
+	{
+		PlayerBase* base = GetPlayerBaseForClient(client);
 		if (!base)
 		{
 			PrintUserCmdText(client, L"ERR Not in player base");
 			return;
 		}
 
-		// Separate base help out into pages. FL seems to have a limit of something like 4k per infocard.
-		const uint numPages = 4;
-		wstring pages[numPages];
-		pages[0] = L"<TRA bold=\"true\"/><TEXT>/base help [page]</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Show this help page. Specify the page number to see the next page.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base login [password]</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Login as base administrator. The following commands are only available if you are logged in as a base administrator.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base addpwd [password] [viewshop], /base rmpwd [password], /base lstpwd</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Add, remove and list administrator passwords for the base. Add 'viewshop' to addpwd to only allow the password to view the shop.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base addtag [tag], /base rmtag [tag], /base lsttag</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Add, remove and list ally tags for the base.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base addhostile [tag], /base rmhostile [tag], /base lsthostile</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Add, remove and list blacklisted tags for the base. They will be shot on sight so use complete tags like =LSF= or IMG| or a shipname like Crunchy_Salad.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base setmasterpwd [old password] [new password]</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Set the master password for the base.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base rep [clear]</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Set or clear the faction that this base is affiliated with. When setting the affiliation, the affiliation will be that of the player executing the command.</TEXT><PARA/><PARA/>"
-			
-			L"<TRA bold=\"true\"/><TEXT>/base supplies</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Prints Crew, Food, Water, Oxygen and repair material counts.</TEXT>";
-
-		pages[1] = L"<TRA bold=\"true\"/><TEXT>/bank withdraw [credits], /bank deposit [credits], /bank status</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Withdraw, deposit or check the status of the credits held by the base's bank.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/shop price [item] [price] [min stock] [max stock]</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Set the [price] of [item]. If the current stock is less than [min stock]"
-			L" then the item cannot be bought by docked ships. If the current stock is more or equal"
-			L" to [max stock] then the item cannot be sold to the base by docked ships.</TEXT><PARA/><PARA/>"
-			L"<TEXT>To prohibit selling to the base of an item by docked ships under all conditions, set [max stock] to 0."
-			L"To prohibit buying from the base of an item by docked ships under all conditions, set [min stock] to 0.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/shop remove [item]</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Remove the item from the stock list. It cannot be sold to the base by docked ships unless they are base administrators.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/shop [page]</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Show the shop stock list for [page]. There are a maximum of 40 items shown per page.</TEXT>";
-
-		pages[2] = L"<TRA bold=\"true\"/><TEXT>/base defensemode</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Control the defense mode for the base.</TEXT><PARA/>"
-			L"<TEXT>Defense Mode 1 - Logic: Blacklist > Whitelist > Faction Whitelist > IFF Standing.</TEXT><PARA/>"
-			L"<TEXT>Docking Rights: Whitelisted ships only.</TEXT><PARA/><PARA/>"
-			L"<TEXT>Defense Mode 2 - Logic: Blacklist > Whitelist > Faction Whitelist > IFF Standing.</TEXT><PARA/>"
-			L"<TEXT>Docking Rights: Anyone with good standing.</TEXT><PARA/><PARA/>"
-			L"<TEXT>Defense Mode 3 - Logic: Blacklist > Whitelist > Faction Whitelist > Hostile</TEXT><PARA/>"
-			L"<TEXT>Docking Rights: Whitelisted ships only.</TEXT><PARA/><PARA/>"
-			L"<TEXT>Defense Mode 4 - Logic: Blacklist > Whitelist > Faction Whitelist > Neutral</TEXT><PARA/>"
-			L"<TEXT>Docking Rights: Anyone with good standing.</TEXT><PARA/><PARA/>"
-			L"<TEXT>Defense Mode 5 - Logic: Blacklist > Whitelist > Faction Whitelist > Neutral</TEXT><PARA/>"
-			L"<TEXT>Docking Rights: Whitelisted ships only.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base info</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Set the base's infocard description.</TEXT>";
-
-		pages[3] = L"<TRA bold=\"true\"/><TEXT>/base facmod</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Control factory modules.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base defmod</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Control defense modules.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base shieldmod</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Control shield modules.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base addfac [aff tag], /base rmfac [aff tag], /base lstfac, /base myfac</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Add, remove and list ally factions for the base. Show your affiliation ID and all available.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base addhfac [aff tag], /base rmhfac [aff tag], /base lsthfac</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Add, remove and list hostile factions for the base.</TEXT><PARA/><PARA/>"
-
-			L"<TRA bold=\"true\"/><TEXT>/base buildmod</TEXT><TRA bold=\"false\"/><PARA/>"
-			L"<TEXT>Control the construction and destruction of base modules and upgrades.</TEXT>";
 
 		uint page = 0;
 		wstring pageNum = GetParam(args, ' ', 2);
 		if (pageNum.length())
 		{
 			page = ToUInt(pageNum) - 1;
-			if (page < 0 || page > numPages - 1) {
+			if (page < 0 || page > numPages - 1)
+			{
 				page = 0;
 			}
 		}
@@ -122,7 +193,7 @@ namespace PlayerCommands
 		_snwprintf(titleBuf, sizeof(titleBuf), L"Base Help : Page %d/%d", page + 1, numPages);
 
 		wchar_t buf[4000];
-		_snwprintf(buf, sizeof(buf), L"<RDL><PUSH/>%s<POP/></RDL>", pagetext);
+		_snwprintf(buf, sizeof(buf), L"<RDL><PUSH/>%ls<POP/></RDL>", pagetext.c_str());
 
 		HkChangeIDSString(client, 500000, titleBuf);
 		HkChangeIDSString(client, 500001, buf);
@@ -138,7 +209,7 @@ namespace PlayerCommands
 		pub::Player::PopUpDialog(client, caption, message, POPUPDIALOG_BUTTONS_CENTER_OK);
 	}
 
-	bool RateLimitLogins(uint client, PlayerBase *base, wstring charname)
+	bool RateLimitLogins(uint client, PlayerBase* base, wstring charname)
 	{
 		uint curr_time = (uint)time(0);
 		uint big_penalty_time = 300;
@@ -165,25 +236,28 @@ namespace PlayerCommands
 		{
 			PrintUserCmdText(client, L"ERR You are attempting to log in too often. %d unsuccesful attempts. Wait %d seconds before repeating attempt.", base->unsuccessful_logins_in_a_row[charname], waittime);
 			return true;
-		} 
-		
-		if (base->unsuccessful_logins_in_a_row[charname] >= amount_of_attempts_to_reach_penalty) 
+		}
+
+		if (base->unsuccessful_logins_in_a_row[charname] >= amount_of_attempts_to_reach_penalty)
 			base->unsuccessful_logins_in_a_row[charname] = 0;
 
 		return false;
 	}
 
-	void BaseLogin(uint client, const wstring &args)
+	void BaseLogin(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-
-		//prevent too often login attempts
-		wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
-		if (RateLimitLogins(client, base, charname)) return;
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
 		if (!base)
 		{
 			PrintUserCmdText(client, L"ERR Not in player base");
+			return;
+		}
+
+		//prevent too often login attempts
+		wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
+		if (RateLimitLogins(client, base, charname))
+		{
 			return;
 		}
 
@@ -200,20 +274,24 @@ namespace PlayerCommands
 		BasePassword searchBp;
 		searchBp.pass = password;
 		list<BasePassword>::iterator ret = find(base->passwords.begin(), base->passwords.end(), searchBp);
-		if (ret == base->passwords.end()) {
+		if (ret == base->passwords.end())
+		{
 			base->unsuccessful_logins_in_a_row[charname]++; //count password failures
 			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
 		BasePassword foundBp = *ret;
-		if (foundBp.admin) {
+		if (foundBp.admin)
+		{
 			clients[client].admin = true;
 			SendMarketGoodSync(base, client);
 			PrintUserCmdText(client, L"OK Access granted");
 			PrintUserCmdText(client, L"Welcome administrator, all base command and control functions are available.");
+			BaseLogging("Base %s: player %s logged in as an admin", wstos(base->basename).c_str(), wstos(charname).c_str());
 		}
-		if (foundBp.viewshop) {
+		if (foundBp.viewshop)
+		{
 			clients[client].viewshop = true;
 			PrintUserCmdText(client, L"OK Access granted");
 			PrintUserCmdText(client, L"Welcome shop viewer.");
@@ -221,18 +299,12 @@ namespace PlayerCommands
 
 	}
 
-	void BaseAddPwd(uint client, const wstring &args)
+	void BaseAddPwd(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -265,23 +337,17 @@ namespace PlayerCommands
 			bp.admin = true;
 		}
 
-		base->passwords.push_back(bp);
+		base->passwords.emplace_back(bp);
 		base->Save();
 		PrintUserCmdText(client, L"OK");
 	}
 
-	void BaseRmPwd(uint client, const wstring &args)
+	void BaseRmPwd(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -306,18 +372,12 @@ namespace PlayerCommands
 		PrintUserCmdText(client, L"ERR Password does not exist");
 	}
 
-	void BaseSetMasterPwd(uint client, const wstring &args)
+	void BaseSetMasterPwd(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -363,55 +423,44 @@ namespace PlayerCommands
 		PrintUserCmdText(client, L"OK New master password %s", new_password.c_str());
 	}
 
-	void BaseLstPwd(uint client, const wstring &cmd)
+	void BaseLstPwd(uint client, const wstring& cmd)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
 		// Do not display the first password.
 		bool first = true;
-		foreach(base->passwords, BasePassword, bpi)
+		for(auto& bp : base->passwords)
 		{
 			if (first)
+			{
 				first = false;
-			else {
-				BasePassword bp = *bpi;
-				wstring *p = &(bp.pass);
+			}
+			else
+			{
 				if (bp.admin)
 				{
-					PrintUserCmdText(client, L"%s - admin", p->c_str());
+					PrintUserCmdText(client, L"%s - admin", bp.pass.c_str());
 				}
 				if (bp.viewshop)
 				{
-					PrintUserCmdText(client, L"%s - viewshop", p->c_str());
+					PrintUserCmdText(client, L"%s - viewshop", bp.pass.c_str());
 				}
 			}
 		}
 		PrintUserCmdText(client, L"OK");
 	}
 
-	void BaseAddAllyTag(uint client, const wstring &args)
+	void BaseAddAllyTag(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -428,7 +477,7 @@ namespace PlayerCommands
 			return;
 		}
 
-		base->ally_tags.push_back(tag);
+		base->ally_tags.emplace_back(tag);
 
 		// Logging
 		wstring thecharname = (const wchar_t*)Players.GetActiveCharacterName(client);
@@ -444,18 +493,12 @@ namespace PlayerCommands
 	}
 
 
-	void BaseRmAllyTag(uint client, const wstring &args)
+	void BaseRmAllyTag(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -486,48 +529,32 @@ namespace PlayerCommands
 		PrintUserCmdText(client, L"OK");
 	}
 
-	void BaseLstAllyTag(uint client, const wstring &cmd)
+	void BaseLstAllyTag(uint client, const wstring& cmd)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Not in player base");
 			return;
 		}
 
-		if (!clients[client].admin)
+		for(auto& i : base->ally_tags)
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
-			return;
+			PrintUserCmdText(client, L"%s", i.c_str());
 		}
-
-		foreach(base->ally_tags, wstring, i)
-			PrintUserCmdText(client, L"%s", i->c_str());
 		PrintUserCmdText(client, L"OK");
 	}
 
-	bool CheckForBase(PlayerBase *base, uint client)
+	void BaseAddAllyFac(uint client, const wstring& args, bool HostileFactionMod)
 	{
-		if (!base)
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return true;
+			return;
 		}
 
-		if (!clients[client].admin)
-		{
-			PrintUserCmdText(client, L"ERR Access denied");
-			return true;
-		}
-		return false;
-	}
-
-	void BaseAddAllyFac(uint client, const wstring &args, bool HostileFactionMod)
-	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (CheckForBase(base, client)) return;
-
-		set<uint>* list;
+		unordered_set<uint>* list;
 		if (!HostileFactionMod) list = &(base->ally_factions);
 		else list = &(base->hostile_factions);
 
@@ -560,12 +587,16 @@ namespace PlayerCommands
 		PrintUserCmdText(client, L"OK");
 	}
 
-	void BaseClearAllyFac(uint client, const wstring &args, bool HostileFactionMod)
+	void BaseClearAllyFac(uint client, const wstring& args, bool HostileFactionMod)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (CheckForBase(base, client)) return;
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		set<uint>* list;
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		unordered_set<uint>* list;
 		if (!HostileFactionMod) list = &(base->ally_factions);
 		else list = &(base->hostile_factions);
 
@@ -574,12 +605,16 @@ namespace PlayerCommands
 		PrintUserCmdText(client, L"OK");
 	}
 
-	void BaseRmAllyFac(uint client, const wstring &args, bool HostileFactionMod)
+	void BaseRmAllyFac(uint client, const wstring& args, bool HostileFactionMod)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (CheckForBase(base, client)) return;
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		set<uint>* list;
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		unordered_set<uint>* list;
 		if (!HostileFactionMod) list = &(base->ally_factions);
 		else list = &(base->hostile_factions);
 
@@ -624,7 +659,7 @@ namespace PlayerCommands
 
 		list<AffCell> AffList;
 
-		static bool IDComparision(AffCell & obj, int y)
+		static bool IDComparision(AffCell& obj, int y)
 		{
 			if (obj.GetID() == y)
 				return true;
@@ -637,7 +672,7 @@ namespace PlayerCommands
 		{
 			INI_Reader ini;
 
-			string factionpropfile = "..\\data\\initialworld.ini";
+			string factionpropfile = R"(..\data\initialworld.ini)";
 			if (ini.open(factionpropfile.c_str(), false))
 			{
 				while (ini.read_header())
@@ -689,19 +724,19 @@ namespace PlayerCommands
 			{
 				if (factions.size() == 0)
 					LoadListOfReps();
-				
+
 				for (map<string, uint>::iterator iter = factions.begin(); iter != factions.end(); iter++)
 				{
 					string factionnickname = iter->first;
 					//MakeID function (in built in Flhook) is the same as mentioned here in C# to CreateFactionID https://github.com/DiscoveryGC/FLHook/blob/master/Plugins/Public/playercntl_plugin/setup_src/FLUtility.cs
-					uint ID = MakeId(factionnickname.c_str()); 
+					uint ID = MakeId(factionnickname.c_str());
 					wstring factionname = GetFactionName(ID);
 					AffList.push_front({ stows(factionnickname), factionname, ID });
 				}
 			}
 			ConPrint(L"base: AffList was loaded succesfully.\n");
 		}
-		public:
+	public:
 		void Init()
 		{
 			LoadAffList();
@@ -727,24 +762,28 @@ namespace PlayerCommands
 	Affiliations A;
 	void Aff_initer() { A.Init(); };
 
-	void BaseLstAllyFac(uint client, const wstring &cmd, bool HostileFactionMod)
+	void BaseLstAllyFac(uint client, const wstring& cmd, bool HostileFactionMod)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (CheckForBase(base, client)) return;
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		set<uint>* list;
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		unordered_set<uint>* list;
 		if (!HostileFactionMod) list = &(base->ally_factions);
 		else list = &(base->hostile_factions);
 
-		for (set<uint>::iterator it = (*list).begin(); it != (*list).end(); ++it)
+		for (auto it : *list)
 		{
-			A.FindAndPrintOneAffiliation(client, *it);
+			A.FindAndPrintOneAffiliation(client, it);
 		}
 		PrintUserCmdText(client, L"OK");
 	}
-	void BaseViewMyFac(uint client, const wstring &cmd)
+	void BaseViewMyFac(uint client, const wstring& cmd)
 	{
-		const wstring &secondword = GetParam(cmd, ' ', 1);
+		const wstring& secondword = GetParam(cmd, ' ', 1);
 
 		A.PrintAll(client);
 
@@ -754,17 +793,17 @@ namespace PlayerCommands
 			theaffiliation = L"Unknown Reputation";
 		PrintUserCmdText(client, L"Ship IFF ID: %d, %s", aff, theaffiliation.c_str());
 	}
-	
-	void BaseRep(uint client, const wstring &args)
+
+	void BaseRep(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
+		PlayerBase* base = GetPlayerBaseForClient(client);
 		if (!base)
 		{
 			PrintUserCmdText(client, L"ERR Not in player base");
 			return;
 		}
 
-		bool isServerAdmin;
+		bool isServerAdmin = false;
 
 		wstring rights;
 		if (HkGetAdmin((const wchar_t*)Players.GetActiveCharacterName(client), rights) == HKE_OK && rights.find(L"superadmin") != -1)
@@ -782,7 +821,8 @@ namespace PlayerCommands
 		wstring arg = GetParam(args, ' ', 2);
 		if (arg == L"clear")
 		{
-			if (isServerAdmin) {
+			if (isServerAdmin)
+			{
 				base->affiliation = 0;
 				base->Save();
 				PrintUserCmdText(client, L"OK cleared base reputation");
@@ -818,18 +858,12 @@ namespace PlayerCommands
 		}
 	}
 
-	void BaseAddHostileTag(uint client, const wstring &args)
+	void BaseAddHostileTag(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -847,7 +881,7 @@ namespace PlayerCommands
 		}
 
 
-		base->perma_hostile_tags.push_back(tag);
+		base->perma_hostile_tags.insert(tag);
 
 		// Logging
 		wstring thecharname = (const wchar_t*)Players.GetActiveCharacterName(client);
@@ -864,18 +898,12 @@ namespace PlayerCommands
 	}
 
 
-	void BaseRmHostileTag(uint client, const wstring &args)
+	void BaseRmHostileTag(uint client, const wstring& args, bool printError)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -885,13 +913,16 @@ namespace PlayerCommands
 			PrintUserCmdText(client, L"ERR No tag");
 		}
 
-		if (find(base->perma_hostile_tags.begin(), base->perma_hostile_tags.end(), tag) == base->perma_hostile_tags.end())
+		if (!base->perma_hostile_tags.count(tag))
 		{
-			PrintUserCmdText(client, L"ERR Tag does not exist");
+			if (printError)
+			{
+				PrintUserCmdText(client, L"ERR Tag does not exist");
+			}
 			return;
 		}
 
-		base->perma_hostile_tags.remove(tag);
+		base->perma_hostile_tags.erase(tag);
 
 		// Logging
 		wstring thecharname = (const wchar_t*)Players.GetActiveCharacterName(client);
@@ -905,47 +936,35 @@ namespace PlayerCommands
 
 		base->Save();
 
+		PrintUserCmdText(client, L"Tag removed from blacklist");
+	}
+
+	void BaseLstHostileTag(uint client, const wstring& cmd)
+	{
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		for(auto& hostileTag : base->perma_hostile_tags)
+			PrintUserCmdText(client, L"%s", hostileTag.c_str());
 		PrintUserCmdText(client, L"OK");
 	}
 
-	void BaseLstHostileTag(uint client, const wstring &cmd)
+	void BaseInfo(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
-			return;
-		}
-
-		foreach(base->perma_hostile_tags, wstring, i)
-			PrintUserCmdText(client, L"%s", i->c_str());
-		PrintUserCmdText(client, L"OK");
-	}
-
-	void BaseInfo(uint client, const wstring &args)
-	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
-
-		if (!clients[client].admin)
-		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
 		uint iPara = ToInt(GetParam(args, ' ', 2));
-		const wstring &cmd = GetParam(args, ' ', 3);
-		const wstring &msg = GetParamToEnd(args, ' ', 4);
+		const wstring& cmd = GetParam(args, ' ', 3);
+		const wstring& msg = GetParamToEnd(args, ' ', 4);
 
 		if (iPara > 0 && iPara <= MAX_PARAGRAPHS && cmd == L"a")
 		{
@@ -963,9 +982,9 @@ namespace PlayerCommands
 			base->infocard.clear();
 			for (int i = 1; i <= MAX_PARAGRAPHS; i++)
 			{
-				wstring wscXML = base->infocard_para[i];
+				wstring& wscXML = base->infocard_para[i];
 				if (wscXML.length())
-					base->infocard += L"<TEXT>" + wscXML + L"</TEXT><PARA/><PARA/>";
+					base->infocard += L"<TEXT>" + ReplaceStr(wscXML, L"\n", L"</TEXT><PARA/><TEXT>") + L"</TEXT><PARA/><PARA/>";
 			}
 
 			base->Save();
@@ -979,9 +998,9 @@ namespace PlayerCommands
 			base->infocard.clear();
 			for (int i = 1; i <= MAX_PARAGRAPHS; i++)
 			{
-				wstring wscXML = base->infocard_para[i];
+				wstring& wscXML = base->infocard_para[i];
 				if (wscXML.length())
-					base->infocard += L"<TEXT>" + wscXML + L"</TEXT><PARA/><PARA/>";
+					base->infocard += L"<TEXT>" + ReplaceStr(wscXML, L"\n", L"</TEXT><PARA/><TEXT>") + L"</TEXT><PARA/><PARA/>";
 			}
 
 			base->Save();
@@ -995,18 +1014,12 @@ namespace PlayerCommands
 		}
 	}
 
-	void BaseDefenseMode(uint client, const wstring &args)
+	void BaseDefenseMode(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
+		PlayerBase* base = GetPlayerBaseForClient(client);
 
-		if (!clients[client].admin)
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
 			return;
 		}
 
@@ -1050,426 +1063,534 @@ namespace PlayerCommands
 		base->SyncReputationForBase();
 	}
 
-	void BaseBuildMod(uint client, const wstring &args)
+	void BaseBuildMod(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Not in player base");
 			return;
 		}
 
-		if (!clients[client].admin)
+		wstring& cmd = GetParam(args, ' ', 1);
+		wstring& moduleListArg = GetParam(args, ' ', 2);
+		wstring& moduleNameNr = GetParamToEnd(args, ' ', 3);
+		if (cmd.empty() || cmd == L"help")
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
-			return;
+			PrintUserCmdText(client, L"/build list - lists available module lists");
+			PrintUserCmdText(client, L"/build list <moduleList> - lists modules available on the selected module list");
+			PrintUserCmdText(client, L"/build start <moduleList> <moduleName/Nr> - starts constructon of selected module");
+			PrintUserCmdText(client, L"/build resume <moduleList> <moduleName/Nr> - resumes selected module construction");
+			PrintUserCmdText(client, L"/build pause <moduleList> <moduleName/Nr> - pauses selected module construction");
+			PrintUserCmdText(client, L"/build info <moduleList> <moduleName/Nr> - provides construction material info for selected module");
+			PrintUserCmdText(client, L"For example, to build a Core Upgrade module, which is on the 'basic' build list");
+			PrintUserCmdText(client, L"type: '/build start basic 1' or '/build start basic Core Upgrade'");
 		}
 
-		const wstring &cmd = GetParam(args, ' ', 2);
+		auto moduleList = buildingCraftLists.find(moduleListArg);
+
 		if (cmd == L"list")
 		{
-			PrintUserCmdText(client, L"Modules:");
-			for (uint index = 1; index < base->modules.size(); index++)
+			if (moduleList == buildingCraftLists.end())
 			{
-				if (base->modules[index])
+				if (!moduleListArg.empty())
 				{
-					Module *mod = (Module*)base->modules[index];
-					PrintUserCmdText(client, L"%u: %s", index, mod->GetInfo(false).c_str());
+					PrintUserCmdText(client, L"ERR invalid module list selected, try one of the ones below.");
 				}
-				else
+				PrintUserCmdText(client, L"Available building lists:");
+				for (const auto& buildType : buildingCraftLists)
 				{
-					PrintUserCmdText(client, L"%u: Empty - available for new module", index);
+					PrintUserCmdText(client, L"|   %ls", buildType.c_str());
 				}
-			}
-			PrintUserCmdText(client, L"OK");
-		}
-		else if (cmd == L"destroy")
-		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
-			{
-				PrintUserCmdText(client, L"ERR Module not found");
-				return;
-			}
-
-			if (base->modules[index]->type == Module::TYPE_STORAGE && base->GetRemainingCargoSpace() < STORAGE_MODULE_CAPACITY)
-			{
-				PrintUserCmdText(client, L"ERR Need %d free space to destroy a storage module", STORAGE_MODULE_CAPACITY);
-
-				wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(client);
-				pub::Player::SendNNMessage(client, pub::GetNicknameId("nnv_anomaly_detected"));
-				wstring wscMsgU = L"KITTY ALERT: Possible type 5 POB cheating by %name (Index = %index, RemainingSpace = %space)\n";
-				wscMsgU = ReplaceStr(wscMsgU, L"%name", wscCharname.c_str());
-				wscMsgU = ReplaceStr(wscMsgU, L"%index", stows(itos(index)).c_str());
-				wscMsgU = ReplaceStr(wscMsgU, L"%space", stows(itos((int)base->GetRemainingCargoSpace())).c_str());
-
-				ConPrint(wscMsgU);
-				LogCheater(client, wscMsgU);
-
-				return;
-			}
-
-			delete base->modules[index];
-			base->modules[index] = 0;
-			base->Save();
-			PrintUserCmdText(client, L"OK Module destroyed");
-		}
-		else if (cmd == L"pause")
-		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
-			{
-				PrintUserCmdText(client, L"ERR Module not found");
-				return;
-			}
-
-			if (base->modules[index]->type != Module::TYPE_BUILD)
-			{
-				PrintUserCmdText(client, L"ERR This module is not in building stage");
-				return;
-			}
-
-			BuildModule *mod = (BuildModule*)base->modules[index];
-
-			if (mod->Paused)
-			{
-				PrintUserCmdText(client, L"ERR Module is already paused");
 			}
 			else
 			{
-				mod->Paused = true;
-				PrintUserCmdText(client, L"OK Module construction paused");
+				PrintUserCmdText(client, L"Modules available in %ls category:", cmd.c_str());
+				for (const auto& infoString : modules_recipe_map[*moduleList])
+				{
+					PrintUserCmdText(client, infoString);
+				}
 			}
-
-			base->Save();
-			
+			return;
 		}
-		else if (cmd == L"resume")
+		else if (moduleList == buildingCraftLists.end())
 		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
-			{
-				PrintUserCmdText(client, L"ERR Module not found");
-				return;
-			}
-
-			if (base->modules[index]->type != Module::TYPE_BUILD)
-			{
-				PrintUserCmdText(client, L"ERR This module is not in building stage");
-				return;
-			}
-
-			BuildModule *mod = (BuildModule*)base->modules[index];
-
-			if (mod->Paused)
-			{
-				mod->Paused = false;
-				PrintUserCmdText(client, L"OK Module construction resumed");
-			}
-			else
-			{
-				PrintUserCmdText(client, L"ERR Module construction is not paused");
-			}
-
-			base->Save();
-
+			PrintUserCmdText(client, L"ERR Invalid module list name, to get available module lists type '/build list', or for general help, '/build help'");
+			return;
 		}
-		else if (cmd == L"construct")
+
+		const RECIPE* buildRecipe = BuildModule::GetModuleRecipe(moduleNameNr, moduleListArg);
+		if (!buildRecipe)
 		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			uint type = ToInt(GetParam(args, ' ', 4));
-			if (index < 1 || index >= base->modules.size() || base->modules[index])
+			PrintUserCmdText(client, L"ERR Invalid module name or number, to get available modules in this list type /build list %ls", moduleListArg.c_str());
+			return;
+		}
+
+		if (cmd == L"start")
+		{
+			if (buildRecipe->shortcut_number == Module::TYPE_CORE)
 			{
-				PrintUserCmdText(client, L"ERR Module index not valid");
-				return;
+				if (set_holiday_mode)
+				{
+					PrintUserCmdText(client, L"ERR Cannot upgrade base's core during holiday mode!");
+					return;
+				}
+				if (!base->affiliation)
+				{
+					PrintUserCmdText(client, L"ERR Base needs to have a defined affiliation to upgrade its core!");
+					return;
+				}
+				if (base->base_level >= 4)
+				{
+					PrintUserCmdText(client, L"ERR Upgrade not available");
+					return;
+				}
+
+				buildRecipe = &recipeMap[core_upgrade_recipes[base->base_level]];
+			}
+			for (const auto& module : base->modules)
+			{
+				BuildModule* buildmod = dynamic_cast<BuildModule*>(module);
+				if (buildmod && buildmod->active_recipe.nickname == buildRecipe->nickname && factoryNicknameToCraftTypeMap.count(buildmod->active_recipe.nickname))
+				{
+					PrintUserCmdText(client, L"ERR Only one factory of a given type per station allowed");
+					return;
+				}
+
+				FactoryModule* facmod = dynamic_cast<FactoryModule*>(module);
+				if (facmod && facmod->factoryNickname == buildRecipe->nickname)
+				{
+					PrintUserCmdText(client, L"ERR Only one factory of a given type per station allowed");
+					return;
+				}
 			}
 
-			if (type < Module::TYPE_CORE || type > Module::TYPE_LAST)
-			{
-				PrintUserCmdText(client, L"ERR Module type not available");
-				return;
-			}
-
-			if (type == Module::TYPE_CORE)
+			if (buildRecipe->shortcut_number == Module::TYPE_CORE)
 			{
 				if (base->base_level >= 4)
 				{
 					PrintUserCmdText(client, L"ERR Upgrade not available");
 					return;
 				}
-			}
-
-			//make the nickname for inspection
-			uint module_nickname = CreateID(MODULE_TYPE_NICKNAMES[type]);
-
-			if (recipes[module_nickname].reqlevel > base->base_level)
-			{
-				PrintUserCmdText(client, L"ERR Insufficient Core Level");
+				if (base->modules.size() > (base->base_level * 3 + 1))
+				{
+					PrintUserCmdText(client, L"ERR Core upgrade already ongoing!");
+					return;
+				}
+				PrintUserCmdText(client, L"Core upgrade started");
+				base->modules.emplace_back(new BuildModule(base, buildRecipe));
+				base->Save();
 				return;
 			}
 
-			base->modules[index] = new BuildModule(base, type);
-			base->Save();
-			PrintUserCmdText(client, L"OK Module construction started");
-		}
-		else
-		{
-			PrintUserCmdText(client, L"ERR Invalid parameters");
-			PrintUserCmdText(client, L"/base buildmod [list|construct|destroy|pause|resume]");
-			PrintUserCmdText(client, L"|  list - show modules and build status");
-			PrintUserCmdText(client, L"|  destroy <index> - destroy module at <index>");
-			PrintUserCmdText(client, L"|  construct <index> <type> - start building module <type> at <index>");
-			PrintUserCmdText(client, L"|  pause <index> - pauses building at <index>");
-			PrintUserCmdText(client, L"|  resume <index> - resumes building at <index>");
-			PrintUserCmdText(client, L"|     <type> = 1 - core upgrade");
-			PrintUserCmdText(client, L"|     <type> = 2 - shield generator");
-			PrintUserCmdText(client, L"|     <type> = 3 - cargo storage");
-			PrintUserCmdText(client, L"|     <type> = 4 - defense platform array type 1");
-			PrintUserCmdText(client, L"|     <type> = 5 - docking module factory");
-			PrintUserCmdText(client, L"|     <type> = 6 - jumpdrive manufacturing factory");
-			PrintUserCmdText(client, L"|     <type> = 7 - hyperspace survey manufacturing factory");
-			PrintUserCmdText(client, L"|     <type> = 8 - cloaking device manufacturing factory");
-			PrintUserCmdText(client, L"|     <type> = 9 - defense platform array type 2");
-			PrintUserCmdText(client, L"|     <type> = 10 - defense platform array type 3");
-			PrintUserCmdText(client, L"|     <type> = 11 - Cloak Disruptor Factory");
-		}
-	}
-
-	void BaseFacMod(uint client, const wstring &args)
-	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
-
-		if (!clients[client].admin)
-		{
-			PrintUserCmdText(client, L"ERR Access denied");
-			return;
-		}
-
-		const wstring &cmd = GetParam(args, ' ', 2);
-		if (cmd == L"list")
-		{
-			PrintUserCmdText(client, L"Factory Modules:");
-			for (uint index = 1; index < base->modules.size(); index++)
+			for (auto& modSlot : base->modules)
 			{
-				if (base->modules[index] &&
-					(base->modules[index]->type == Module::TYPE_M_CLOAK
-						|| base->modules[index]->type == Module::TYPE_M_HYPERSPACE_SCANNER
-						|| base->modules[index]->type == Module::TYPE_M_JUMPDRIVES
-						|| base->modules[index]->type == Module::TYPE_M_DOCKING
-						|| base->modules[index]->type == Module::TYPE_M_CLOAKDISRUPTOR))
+				if (modSlot == nullptr)
 				{
-					FactoryModule *mod = (FactoryModule*)base->modules[index];
-					PrintUserCmdText(client, L"%u: %s", index, mod->GetInfo(false).c_str());
+					modSlot = new BuildModule(base, buildRecipe);
+					base->Save();
+					PrintUserCmdText(client, L"Construction started");
+					return;
 				}
 			}
-			PrintUserCmdText(client, L"OK");
-		}
-		else if (cmd == L"clear")
-		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
-			{
-				PrintUserCmdText(client, L"ERR Module index not valid");
-				return;
-			}
-
-			if (!base->modules[index] ||
-				(base->modules[index]->type != Module::TYPE_M_CLOAK
-					&& base->modules[index]->type != Module::TYPE_M_HYPERSPACE_SCANNER
-					&& base->modules[index]->type != Module::TYPE_M_JUMPDRIVES
-					&& base->modules[index]->type != Module::TYPE_M_DOCKING
-					&& base->modules[index]->type != Module::TYPE_M_CLOAKDISRUPTOR))
-			{
-				PrintUserCmdText(client, L"ERR Not factory module");
-				return;
-			}
-
-			FactoryModule *mod = (FactoryModule*)base->modules[index];
-			if (mod->ClearQueue())
-				PrintUserCmdText(client, L"OK Build queue cleared");
-			else
-				PrintUserCmdText(client, L"ERR Build queue clear failed");
-			base->Save();
-		}
-		else if (cmd == L"cancel")
-		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
-			{
-				PrintUserCmdText(client, L"ERR Module index not valid");
-				return;
-			}
-
-			if (!base->modules[index] ||
-				(base->modules[index]->type != Module::TYPE_M_CLOAK
-					&& base->modules[index]->type != Module::TYPE_M_HYPERSPACE_SCANNER
-					&& base->modules[index]->type != Module::TYPE_M_JUMPDRIVES
-					&& base->modules[index]->type != Module::TYPE_M_DOCKING
-					&& base->modules[index]->type != Module::TYPE_M_CLOAKDISRUPTOR))
-			{
-				PrintUserCmdText(client, L"ERR Not factory module");
-				return;
-			}
-
-			FactoryModule *mod = (FactoryModule*)base->modules[index];
-			mod->ClearRecipe();
-			PrintUserCmdText(client, L"OK Active recipe is canceled");
-			base->Save();
+			PrintUserCmdText(client, L"ERR No free module slots!");
 		}
 		else if (cmd == L"pause")
 		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
+			for (auto& iter = base->modules.begin(); iter != base->modules.end(); iter++)
 			{
-				PrintUserCmdText(client, L"ERR Module index not valid");
-				return;
+				BuildModule* buildmod = dynamic_cast<BuildModule*>(*iter);
+				if (buildmod && buildmod->active_recipe.nickname == buildRecipe->nickname)
+				{
+					if (!buildmod->Paused)
+					{
+						buildmod->Paused = true;
+						PrintUserCmdText(client, L"Module construction paused");
+						base->Save();
+					}
+					else
+					{
+						PrintUserCmdText(client, L"ERR Module construction already paused");
+					}
+					return;
+				}
 			}
-
-			if (!base->modules[index] ||
-				(base->modules[index]->type != Module::TYPE_M_CLOAK
-					&& base->modules[index]->type != Module::TYPE_M_HYPERSPACE_SCANNER
-					&& base->modules[index]->type != Module::TYPE_M_JUMPDRIVES
-					&& base->modules[index]->type != Module::TYPE_M_DOCKING
-					&& base->modules[index]->type != Module::TYPE_M_CLOAKDISRUPTOR))
-			{
-				PrintUserCmdText(client, L"ERR Not factory module");
-				return;
-			}
-
-			FactoryModule *mod = (FactoryModule*)base->modules[index];
-			if (mod->ToggleQueuePaused(true))
-				PrintUserCmdText(client, L"ERR Build queue is already paused");
-			else
-				PrintUserCmdText(client, L"OK Build queue paused");
-			base->Save();
+			PrintUserCmdText(client, L"ERR Selected module is not being built");
 		}
 		else if (cmd == L"resume")
 		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
+			for (auto& iter = base->modules.begin(); iter != base->modules.end(); iter++)
 			{
-				PrintUserCmdText(client, L"ERR Module index not valid");
-				return;
+				BuildModule* buildmod = dynamic_cast<BuildModule*>(*iter);
+				if (buildmod && buildmod->active_recipe.nickname == buildRecipe->nickname)
+				{
+					if (buildmod->Paused)
+					{
+						buildmod->Paused = false;
+						PrintUserCmdText(client, L"Module construction resumed");
+						base->Save();
+					}
+					else
+					{
+						PrintUserCmdText(client, L"ERR Module construction already ongoing");
+					}
+					return;
+				}
 			}
-
-			if (!base->modules[index] ||
-				(base->modules[index]->type != Module::TYPE_M_CLOAK
-					&& base->modules[index]->type != Module::TYPE_M_HYPERSPACE_SCANNER
-					&& base->modules[index]->type != Module::TYPE_M_JUMPDRIVES
-					&& base->modules[index]->type != Module::TYPE_M_DOCKING
-					&& base->modules[index]->type != Module::TYPE_M_CLOAKDISRUPTOR))
-			{
-				PrintUserCmdText(client, L"ERR Not factory module");
-				return;
-			}
-
-			FactoryModule *mod = (FactoryModule*)base->modules[index];
-			if (mod->ToggleQueuePaused(false))
-				PrintUserCmdText(client, L"OK Build queue resumed");
-			else
-				PrintUserCmdText(client, L"ERR Build queue is not paused");
-			base->Save();
+			PrintUserCmdText(client, L"ERR Selected module is not being built");
 		}
-		else if (cmd == L"add")
+		else if (cmd == L"info")
 		{
-			uint index = ToInt(GetParam(args, ' ', 3));
-			uint type = ToInt(GetParam(args, ' ', 4));
-			if (index < 1 || index >= base->modules.size() || !base->modules[index])
+			PrintUserCmdText(client, L"Construction materials for %ls", buildRecipe->infotext.c_str());
+			for (const auto& material : buildRecipe->consumed_items)
 			{
-				PrintUserCmdText(client, L"ERR Module index not valid");
-				return;
+				const GoodInfo* gi = GoodList::find_by_id(material.first);
+				PrintUserCmdText(client, L"|   %ls x%u", HkGetWStringFromIDS(gi->iIDSName).c_str(), material.second);
 			}
-
-			if (!base->modules[index] ||
-				(base->modules[index]->type != Module::TYPE_M_CLOAK
-					&& base->modules[index]->type != Module::TYPE_M_HYPERSPACE_SCANNER
-					&& base->modules[index]->type != Module::TYPE_M_JUMPDRIVES
-					&& base->modules[index]->type != Module::TYPE_M_DOCKING
-					&& base->modules[index]->type != Module::TYPE_M_CLOAKDISRUPTOR))
+			if (buildRecipe->credit_cost)
 			{
-				PrintUserCmdText(client, L"ERR Not factory module");
-				return;
+				PrintUserCmdText(client, L"|   $%u credits", buildRecipe->credit_cost);
 			}
-
-			FactoryModule *mod = (FactoryModule*)base->modules[index];
-			if (mod->AddToQueue(type))
-				PrintUserCmdText(client, L"OK Item added to build queue");
-			else
-				PrintUserCmdText(client, L"ERR Item add to build queue failed");
-			base->Save();
 		}
 		else
 		{
-			PrintUserCmdText(client, L"ERR Invalid parameters");
-			PrintUserCmdText(client, L"/base facmod [list|clear|cancel|add|pause|resume]");
-			PrintUserCmdText(client, L"|  list - show factory modules and build status");
-			PrintUserCmdText(client, L"|  clear <index> - clear queue, which starts from the second item in the building queue for the factory module at <index>");
-
-			PrintUserCmdText(client, L"|  cancel <index> - clear only active recipe, which is the first item in the building queue for the factory module at <index>");
-			
-			PrintUserCmdText(client, L"|  add <index> <type> - add item <type> to build queue for factory module at <index>");
-			PrintUserCmdText(client, L"|     For Docking Module Factory:");
-			PrintUserCmdText(client, L"|     <type> = 1 - docking module type 1");
-			PrintUserCmdText(client, L"|     For Hyperspace Jumpdrive Factory");
-			PrintUserCmdText(client, L"|     <type> = 2 - Jump Drive Series II");
-			PrintUserCmdText(client, L"|     <type> = 3 - Jump Drive Series III");
-			PrintUserCmdText(client, L"|     <type> = 4 - Jump Drive Series IV");
-			PrintUserCmdText(client, L"|     For Hyperspace Survey Factory");
-			PrintUserCmdText(client, L"|     <type> = 5 - Hyperspace Survey Module Mk1");
-			PrintUserCmdText(client, L"|     <type> = 6 - Hyperspace Survey Module Mk2");
-			PrintUserCmdText(client, L"|     <type> = 7 - Hyperspace Survey Module Mk3");
-			PrintUserCmdText(client, L"|     <type> = 15 - Hyperspace Matrix Mk1");
-			PrintUserCmdText(client, L"|     For Cloaking Device Factory");
-			PrintUserCmdText(client, L"|     <type> = 8 - Cloaking Device MK1 (small)");
-			PrintUserCmdText(client, L"|     <type> = 9 - Cloaking Device MK2 (medium)");
-			PrintUserCmdText(client, L"|     <type> = 10 - Cloaking Device MK2 Advanced (large)");
-			PrintUserCmdText(client, L"|     <type> = 11 - Cloaking Device MK3 (transport)");
-			PrintUserCmdText(client, L"|     For Cloak Disruptor Factory");
-			PrintUserCmdText(client, L"|     <type> = 12 - Cloak Disruptor Type-1");
-			PrintUserCmdText(client, L"|     <type> = 13 - Cloak Disruptor Type-2");
-			PrintUserCmdText(client, L"|     <type> = 14 - Cloak Disruptor Type-3");
-			PrintUserCmdText(client, L"|  pause <index> - pause factory module at <index>");
-			PrintUserCmdText(client, L"|  resume <index> - resume factory module at <index>");
+			PrintUserCmdText(client, L"ERR Invalid module list name, for more information use /build help");
 		}
 	}
 
-	void BaseDefMod(uint client, const wstring &args)
+	void BaseSwapModule(uint client, const wstring& args)
 	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
 		{
-			PrintUserCmdText(client, L"ERR Not in player base");
 			return;
 		}
 
-		if (!clients[client].admin)
+		const uint index1 = ToUInt(GetParam(args, ' ', 2));
+		const uint index2 = ToUInt(GetParam(args, ' ', 3));
+		if (index1 == 0 || index2 == 0)
 		{
-			PrintUserCmdText(client, L"ERR Access denied");
+			PrintUserCmdText(client, L"ERR Invalid module indexes");
+			return;
+		}
+		if (index1 == index2)
+		{
+			PrintUserCmdText(client, L"ERR Can't swap a module with itself");
+			return;
+		}
+		const uint coreUpgradeIndex = (base->base_level * 3) + 1;
+		if (index1 == coreUpgradeIndex || index2 == coreUpgradeIndex)
+		{
+			PrintUserCmdText(client, L"ERR Can't swap core upgrade");
 			return;
 		}
 
-		const wstring &cmd = GetParam(args, ' ', 2);
+		Module* tempModulePtr = base->modules[index1];
+		base->modules[index1] = base->modules[index2];
+		base->modules[index2] = tempModulePtr;
+		base->Save();
+	}
+
+	void BaseBuildModDestroy(uint client, const wstring& args)
+	{
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		uint index = ToInt(GetParam(args, ' ', 1));
+		if (index < 1 || index >= base->modules.size() || !base->modules[index])
+		{
+			PrintUserCmdText(client, L"ERR Module not found");
+			return;
+		}
+
+		if (base->GetRemainingCargoSpace() < base->modules[index]->cargoSpace)
+		{
+			PrintUserCmdText(client, L"ERR Need %d free space to destroy this module", base->modules[index]->cargoSpace);
+			return;
+		}
+
+		if (base->modules[index]->type == Module::TYPE_FACTORY)
+		{
+			FactoryModule* facMod = dynamic_cast<FactoryModule*>(base->modules[index]);
+			for (auto& craftType : factoryNicknameToCraftTypeMap[facMod->factoryNickname])
+			{
+				base->availableCraftList.erase(craftType);
+				base->craftTypeTofactoryModuleMap.erase(craftType);
+			}
+			delete base->modules[index];
+			base->modules[index] = nullptr;
+		}
+		else if (base->modules[index]->type == Module::TYPE_BUILD)
+		{
+			BuildModule* bm = dynamic_cast<BuildModule*>(base->modules[index]);
+			if (!bm)
+			{
+				PrintUserCmdText(client, L"ERR Impossible destroy error, contact staff!");
+				return;
+			}
+			if (bm->active_recipe.shortcut_number == Module::TYPE_CORE)
+			{
+				delete base->modules[index];
+				base->modules[index] = nullptr;
+				base->modules.resize(base->base_level * 3 + 1);
+			}
+			else
+			{
+				delete base->modules[index];
+				base->modules[index] = nullptr;
+			}
+		}
+		else
+		{
+			delete base->modules[index];
+			base->modules[index] = nullptr;
+		}
+		base->RecalculateCargoSpace();
+		base->Save();
+		PrintUserCmdText(client, L"OK Module destroyed");
+	}
+
+	void PrintCraftHelpMenu(uint client)
+	{
+		PrintUserCmdText(client, L"/craft stopall - stops all production on the base");
+		PrintUserCmdText(client, L"/craft clearall - clears all production queues on the base");
+		PrintUserCmdText(client, L"/craft list - show all available craft lists");
+		PrintUserCmdText(client, L"/craft list <craftList/Nr> - list item recipes available for this crafting list");
+		PrintUserCmdText(client, L"/craft start <craftList/Nr> <name/itemNr> - adds selected item into the crafting queue");
+		PrintUserCmdText(client, L"/craft stop <craftList/Nr> <name/itemNr> - stops crafting of selected item");
+		PrintUserCmdText(client, L"/craft pause <craftList/Nr> <name/itemNr> - pauses crafting of selected item");
+		PrintUserCmdText(client, L"/craft resume <craftList/Nr> <name/itemNr> - resumes crafting of selected item");
+		PrintUserCmdText(client, L"/craft info <craftList/Nr> <name/itemNr> - list materials necessary for selected item");
+		PrintUserCmdText(client, L"For example, to craft a Docking Module, which is the first item on a 'dockmodule' craft list");
+		PrintUserCmdText(client, L"type: '/craft start dockmodule 1' or '/craft start dockmodule Docking Module'");
+	}
+
+	void BaseFacMod(uint client, const wstring& args)
+	{
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		if (base->availableCraftList.empty())
+		{
+			PrintUserCmdText(client, L"ERR no factories found");
+			return;
+		}
+
+		wstring& cmd = GetParam(args, ' ', 1);
+		wstring& craftList = GetParam(args, ' ', 2);
+		wstring& craftNameNr = GetParamToEnd(args, ' ', 3);
+
+		if (cmd.empty() || cmd == L"help")
+		{
+			PrintCraftHelpMenu(client);
+			return;
+		}
+		if (cmd == L"stopall")
+		{
+			FactoryModule::StopAllProduction(base);
+			PrintUserCmdText(client, L"OK Factories stopped");
+			return;
+		}
+		if (cmd == L"clearall")
+		{
+			FactoryModule::ClearAllProductionQueues(base);
+			PrintUserCmdText(client, L"OK Craft queues cleared");
+			return;
+		}
+
+		uint craftTypeNumber = ToUInt(craftList);
+		if (craftTypeNumber && base->availableCraftList.size() >= craftTypeNumber)
+		{
+			craftList = *next(base->availableCraftList.begin(), craftTypeNumber - 1);
+		}
+
+		if (cmd == L"list")
+		{
+			if (!base->availableCraftList.count(craftList))
+			{
+				if (!craftList.empty())
+				{
+					PrintUserCmdText(client, L"ERR Invalid craft list selected, use one of the below:");
+				}
+				PrintUserCmdText(client, L"Available crafting lists:");
+				uint counter = 1;
+				for (const wstring& craftTypeName : base->availableCraftList)
+				{
+					PrintUserCmdText(client, L"%u. %ls", counter, craftTypeName.c_str());
+					counter++;
+				}
+			}
+			else
+			{
+				PrintUserCmdText(client, L"Available recipes for %ls crafting list:", craftList.c_str());
+				for (wstring& infoLine : factory_recipe_map[craftList])
+				{
+					PrintUserCmdText(client, infoLine);
+				}
+			}
+			return;
+		}
+		
+		bool selectedValidCraftList = base->availableCraftList.count(craftList);
+		const RECIPE* recipe = FactoryModule::GetFactoryProductRecipe(craftList, craftNameNr);
+		
+		if (cmd != L"stop" && cmd != L"start" && cmd != L"pause" && cmd != L"resume" && cmd != L"info")
+		{
+			PrintUserCmdText(client, L"ERR Incorrect command, use '/craft help' for more information.");
+			return;
+		}
+
+		if (!selectedValidCraftList)
+		{
+			PrintUserCmdText(client, L"ERR Invalid or unavailable craft list, for a list of valid craft lists use '/craft list'");
+			return;
+		}
+		else if (!recipe)
+		{
+			PrintUserCmdText(client, L"ERR Invalid recipe selected, for a list of valid recipes in selected craft list, use '/craft list %ls'", craftList.c_str());
+			return;
+		}
+
+		if (cmd == L"info")
+		{
+			PrintUserCmdText(client, L"Construction materials for %ls:", recipe->infotext.c_str());
+			for (const auto& item : recipe->consumed_items)
+			{
+				const GoodInfo* gi = GoodList::find_by_id(item.first);
+				PrintUserCmdText(client, L"|   %ls x%u", HkGetWStringFromIDS(gi->iIDSName).c_str(), item.second);
+			}
+			if (recipe->credit_cost)
+			{
+				PrintUserCmdText(client, L"|   $%u credits", recipe->credit_cost);
+			}
+			PrintUserCmdText(client, L"Produced goods:");
+			for (const auto& product : recipe->produced_items)
+			{
+				const GoodInfo* gi = GoodList::find_by_id(product.first);
+				PrintUserCmdText(client, L"|   %ls x%u", HkGetWStringFromIDS(gi->iIDSName).c_str(), product.second);
+			}
+			if (!recipe->catalyst_items.empty())
+			{
+				PrintUserCmdText(client, L"Production catalysts:");
+				for (const auto& catalyst : recipe->catalyst_items)
+				{
+					const GoodInfo* gi = GoodList::find_by_id(catalyst.first);
+					PrintUserCmdText(client, L"|   %ls x%u", HkGetWStringFromIDS(gi->iIDSName).c_str(), catalyst.second);
+				}
+			}
+			if (!recipe->catalyst_workforce.empty())
+			{
+				PrintUserCmdText(client, L"Workers:");
+				for (const auto& workforce : recipe->catalyst_workforce)
+				{
+					const GoodInfo* gi = GoodList::find_by_id(workforce.first);
+					PrintUserCmdText(client, L"|   %ls x%u", HkGetWStringFromIDS(gi->iIDSName).c_str(), workforce.second);
+				}
+			}
+			if (!recipe->affiliationBonus.empty())
+			{
+				PrintUserCmdText(client, L"IFF bonuses:");
+				for (const auto& rep : recipe->affiliationBonus)
+				{
+					PrintUserCmdText(client, L"|   %ls - +%u%% efficiency bonus",
+						HkGetWStringFromIDS(Reputation::get_short_name(rep.first)).c_str(), static_cast<uint>(((1.0f / rep.second) - 1.0f) * 100));
+				}
+			}
+			return;
+		}
+
+		if (cmd == L"start")
+		{
+			if (!base->availableCraftList.count(recipe->craft_type))
+			{
+				PrintUserCmdText(client, L"ERR incorrect craftlist, for more information use /craft help");
+				return;
+			}
+			FactoryModule* factory = base->craftTypeTofactoryModuleMap[recipe->craft_type];
+			if (!factory)
+			{
+				PrintUserCmdText(client, L"ERR Impossible factory error, contact staff");
+				return;
+			}
+			if (factory->AddToQueue(recipe->nickname))
+			{
+				PrintUserCmdText(client, L"OK Item added to build queue");
+				base->Save();
+			}
+			else
+			{
+				PrintUserCmdText(client, L"ERR This auto-looping recipe is already active");
+			}
+			return;
+		}
+
+		FactoryModule* factory;
+		factory = FactoryModule::FindModuleByProductInProduction(base, recipe->nickname);
+		if (!factory)
+		{
+			PrintUserCmdText(client, L"ERR item is not being produced");
+			return;
+		}
+
+		if (cmd == L"stop")
+		{
+			factory->ClearQueue();
+			factory->ClearRecipe();
+			PrintUserCmdText(client, L"OK Factory stopped");
+		}
+		else if (cmd == L"pause")
+		{
+			if (factory->ToggleQueuePaused(true))
+				PrintUserCmdText(client, L"OK Build queue paused");
+			else
+			{
+				PrintUserCmdText(client, L"ERR Build queue is already paused");
+				return;
+			}
+		}
+		else if (cmd == L"resume")
+		{
+			if (factory->ToggleQueuePaused(false))
+				PrintUserCmdText(client, L"OK Build queue resumed");
+			else
+			{
+				PrintUserCmdText(client, L"ERR Build queue is already ongoing");
+				return;
+			}
+		}
+		base->Save();
+	}
+
+	void BaseDefMod(uint client, const wstring& args)
+	{
+		PlayerBase* base = GetPlayerBaseForClient(client);
+
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		const wstring& cmd = GetParam(args, ' ', 2);
 		if (cmd == L"list")
 		{
 			PrintUserCmdText(client, L"Defense Modules:");
 			for (uint index = 0; index < base->modules.size(); index++)
 			{
-				if (base->modules[index])
+				DefenseModule* mod = dynamic_cast<DefenseModule*>(base->modules[index]);
+				if (mod)
 				{
-					if (base->modules[index]->type == Module::TYPE_DEFENSE_1
-						|| base->modules[index]->type == Module::TYPE_DEFENSE_2
-						|| base->modules[index]->type == Module::TYPE_DEFENSE_3)
-					{
-						DefenseModule *mod = (DefenseModule*)base->modules[index];
-						PrintUserCmdText(client, L"Module %u: Position %0.0f %0.0f %0.0f Orient %0.0f %0.0f %0.0f",
-							index, mod->pos.x, mod->pos.y, mod->pos.z,
-							mod->rot.z, mod->rot.y, mod->rot.z);
-					}
+					PrintUserCmdText(client, L"Module %u: Position %0.0f %0.0f %0.0f Orient %0.0f %0.0f %0.0f",
+						index, mod->pos.x, mod->pos.y, mod->pos.z,
+						mod->rot.z, mod->rot.y, mod->rot.z);
 				}
 			}
 			PrintUserCmdText(client, L"OK");
@@ -1485,12 +1606,9 @@ namespace PlayerCommands
 			float rz = (float)ToInt(GetParam(args, ' ', 9));
 			if (index < base->modules.size() && base->modules[index])
 			{
-				if (base->modules[index]->type == Module::TYPE_DEFENSE_1
-					|| base->modules[index]->type == Module::TYPE_DEFENSE_2
-					|| base->modules[index]->type == Module::TYPE_DEFENSE_3)
+				DefenseModule* mod = dynamic_cast<DefenseModule*>(base->modules[index]);
+				if (mod)
 				{
-					DefenseModule *mod = (DefenseModule*)base->modules[index];
-
 					// Distance from base is limited to 5km
 					Vector new_pos = { x, y, z };
 					if (HkDistance3D(new_pos, base->position) > 5000)
@@ -1529,54 +1647,7 @@ namespace PlayerCommands
 		}
 	}
 
-	void BaseShieldMod(uint client, const wstring &args)
-	{
-		PlayerBase *base = GetPlayerBaseForClient(client);
-		if (!base)
-		{
-			PrintUserCmdText(client, L"ERR Not in player base");
-			return;
-		}
-
-		if (!clients[client].admin)
-		{
-			PrintUserCmdText(client, L"ERR Access denied");
-			return;
-		}
-
-		const wstring &cmd = GetParam(args, ' ', 2);
-		if (cmd == L"on")
-		{
-			base->shield_active_time = 3600 * 24;
-		}
-		else if (cmd == L"off")
-		{
-			base->shield_active_time = 0;
-		}
-		else
-		{
-			PrintUserCmdText(client, L"ERR Invalid parameters");
-			PrintUserCmdText(client, L"/base shieldmod [on|off]");
-			PrintUserCmdText(client, L"|  on - turn the shield on");
-			PrintUserCmdText(client, L"|  off - turn the shield off");
-		}
-
-		// Force the timer for the shield module(s) to run and read their
-		// status.
-		for (uint index = 0; index < base->modules.size(); index++)
-		{
-			if (base->modules[index] &&
-				base->modules[index]->type == Module::TYPE_SHIELDGEN)
-			{
-				ShieldModule *mod = (ShieldModule*)base->modules[index];
-				mod->Timer(0);
-				PrintUserCmdText(client, L"|  * %s", mod->GetInfo(false).c_str());
-			}
-		}
-		PrintUserCmdText(client, L"OK");
-	}
-
-	void Bank(uint client, const wstring &args)
+	void Bank(uint client, const wstring& args)
 	{
 		PlayerBase *base = GetPlayerBaseForClient(client);
 
@@ -1586,8 +1657,12 @@ namespace PlayerCommands
 			return;
 		}
 
-		const wstring &cmd = GetParam(args, ' ', 1);
-		int money = ToInt(GetParam(args, ' ', 2));
+		const wstring& cmd = GetParam(args, ' ', 1);
+		wstring& moneyStr = GetParam(args, ' ', 2);
+		moneyStr = ReplaceStr(moneyStr, L".", L"");
+		moneyStr = ReplaceStr(moneyStr, L",", L"");
+		moneyStr = ReplaceStr(moneyStr, L"$", L"");
+		int money = ToInt(moneyStr);
 
 		wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
 
@@ -1663,68 +1738,77 @@ namespace PlayerCommands
 		}
 	}
 
-	static void ShowShopStatus(uint client, PlayerBase *base, wstring substring, int page)
+	static void ShowShopStatus(uint client, PlayerBase* base, wstring substring, int page)
 	{
 		int matchingItems = 0;
-		for (map<UINT, MARKET_ITEM>::iterator i = base->market_items.begin(); i != base->market_items.end(); ++i)
+		for (auto& i : base->market_items)
 		{
-			const GoodInfo *gi = GoodList::find_by_id(i->first);
+			const GoodInfo* gi = GoodList::find_by_id(i.first);
 			if (!gi)
 				continue;
 
 			wstring name = HkGetWStringFromIDS(gi->iIDSName);
-			if (ToLower(name).find(substring) != std::wstring::npos) {
+			if (ToLower(name).find(substring) != std::wstring::npos)
+			{
 				matchingItems++;
 			}
 		}
 
-		int pages = (matchingItems / 40) + 1;
+		int pages = (matchingItems / ITEMS_PER_PAGE) + 1;
 		if (page > pages)
+		{
 			page = pages;
+		}
 		else if (page < 1)
+		{
 			page = 1;
-
+		}
 		wchar_t buf[1000];
 		_snwprintf(buf, sizeof(buf), L"Shop Management : Page %d/%d", page, pages);
 		wstring title = buf;
 
-		int start_item = ((page - 1) * 40) + 1;
-		int end_item = page * 40;
+		int start_item = ((page - 1) * ITEMS_PER_PAGE) + 1;
+		int end_item = page * ITEMS_PER_PAGE;
 
 		wstring status = L"<RDL><PUSH/>";
 		status += L"<TEXT>Available commands:</TEXT><PARA/>";
 		if (clients[client].admin)
 		{
-			status += L"<TEXT>  /shop price [item] [price] [min stock] [max stock]</TEXT><PARA/>";
+			status += L"<TEXT>  /shop price [item] [price]</TEXT><PARA/>";
+			status += L"<TEXT>  /shop stock [item] [min stock] [max stock]</TEXT><PARA/>";
 			status += L"<TEXT>  /shop remove [item]</TEXT><PARA/>";
 		}
 		status += L"<TEXT>  /shop [page]</TEXT><PARA/><TEXT>  /shop filter [substring] [page]</TEXT><PARA/><PARA/>";
 
 		status += L"<TEXT>Stock:</TEXT><PARA/>";
 		int item = 1;
-		int globalItem = 1;
+		int globalItem = 0;
 
-		for (map<UINT, MARKET_ITEM>::iterator i = base->market_items.begin(); i != base->market_items.end(); ++i, globalItem++)
+		for (auto& i : base->market_items)
 		{
+			++globalItem;
 			if (item > end_item)
 				break;
 
-			const GoodInfo *gi = GoodList::find_by_id(i->first);
-			if (!gi) {
+			const GoodInfo* gi = GoodList::find_by_id(i.first);
+			if (!gi)
+			{
 				item++;
 				continue;
 			}
 
 			wstring name = HkGetWStringFromIDS(gi->iIDSName);
-			if (ToLower(name).find(substring) != std::wstring::npos) {
-				if (item < start_item) {
+			if (ToLower(name).find(substring) != std::wstring::npos)
+			{
+				if (item < start_item)
+				{
 					item++;
 					continue;
 				}
 				wchar_t buf[1000];
-				_snwprintf(buf, sizeof(buf), L"<TEXT>  %02u:  %ux %s %0.0f credits stock: %u min %u max</TEXT><PARA/>",
-					globalItem, i->second.quantity, HtmlEncode(name).c_str(),
-					i->second.price, i->second.min_stock, i->second.max_stock);
+				_snwprintf(buf, sizeof(buf), L"<TEXT>  %02u:  %ux %s %0.0f credits stock: %u min %u max (%s)</TEXT><PARA/>",
+					globalItem, i.second.quantity, HtmlEncode(name).c_str(),
+					i.second.price, i.second.min_stock, i.second.max_stock, i.second.is_public ? L"Public" : L"Private");
 				status += buf;
 				item++;
 			}
@@ -1745,18 +1829,18 @@ namespace PlayerCommands
 		pub::Player::PopUpDialog(client, caption, message, POPUPDIALOG_BUTTONS_CENTER_OK);
 	}
 
-	void Shop(uint client, const wstring &args)
+	void Shop(uint client, const wstring& args)
 	{
 		// Check that this player is in a player controlled base
-		PlayerBase *base = GetPlayerBaseForClient(client);
+		PlayerBase* base = GetPlayerBaseForClient(client);
 		if (!base)
 		{
 			PrintUserCmdText(client, L"ERR Not in player base");
 			return;
 		}
 
-		const wstring &cmd = GetParam(args, ' ', 1);
-		if (!clients[client].admin && (!clients[client].viewshop || (cmd == L"price" || cmd == L"remove")))
+		const wstring& cmd = GetParam(args, ' ', 1);
+		if (!clients[client].admin && (!clients[client].viewshop || (cmd == L"price" || cmd == L"stock" || cmd == L"remove" || cmd == L"public" || cmd == L"private")))
 		{
 			PrintUserCmdText(client, L"ERROR: Access denied");
 			return;
@@ -1766,31 +1850,62 @@ namespace PlayerCommands
 		{
 			int item = ToInt(GetParam(args, ' ', 2));
 			int money = ToInt(GetParam(args, ' ', 3));
-			int min_stock = ToInt(GetParam(args, ' ', 4));
-			int max_stock = ToInt(GetParam(args, ' ', 5));
 
-			if (money < 1 || money > 1000000000)
+			if (money < 1 || money > 1'000'000'000)
 			{
 				PrintUserCmdText(client, L"ERR Price not valid");
 				return;
 			}
 
-			int curr_item = 1;
-			for (map<UINT, MARKET_ITEM>::iterator i = base->market_items.begin(); i != base->market_items.end(); ++i, curr_item++)
+			int curr_item = 0;
+			for (auto& i : base->market_items)
 			{
+				++curr_item;
 				if (curr_item == item)
 				{
-					i->second.price = (float)money;
-					i->second.min_stock = min_stock;
-					i->second.max_stock = max_stock;
-					SendMarketGoodUpdated(base, i->first, i->second);
+					i.second.price = (float)money;
+					SendMarketGoodUpdated(base, i.first, i.second);
 					base->Save();
 
-					int page = ((curr_item + 39) / 40);
+					int page = ((curr_item + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE);
 					ShowShopStatus(client, base, L"", page);
 					PrintUserCmdText(client, L"OK");
+
+					wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
+					const GoodInfo* gi = GoodList::find_by_id(i.first);
+					BaseLogging("Base %s: player %s changed price of %s to %d", wstos(base->basename).c_str(), wstos(charname).c_str(), wstos(HkGetWStringFromIDS(gi->iIDSName)).c_str(), money);
 					return;
 				}
+			}
+			PrintUserCmdText(client, L"ERR Commodity does not exist");
+		}
+		else if (cmd == L"stock")
+		{
+			int item = ToInt(GetParam(args, ' ', 2));
+			uint min_stock = ToUInt(GetParam(args, ' ', 3));
+			uint max_stock = ToUInt(GetParam(args, ' ', 4));
+
+			int curr_item = 0;
+			for (auto& i : base->market_items)
+			{
+				++curr_item;
+				if (curr_item != item)
+				{
+					continue;
+				}
+				i.second.min_stock = min_stock;
+				i.second.max_stock = max_stock;
+				SendMarketGoodUpdated(base, i.first, i.second);
+				base->Save();
+
+				int page = ((curr_item + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE);
+				ShowShopStatus(client, base, L"", page);
+				PrintUserCmdText(client, L"OK");
+
+				wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
+				const GoodInfo* gi = GoodList::find_by_id(i.first);
+				BaseLogging("Base %s: player %s changed stock of %s to min:%u max:%u", wstos(base->basename).c_str(), wstos(charname).c_str(), wstos(HkGetWStringFromIDS(gi->iIDSName)).c_str(), min_stock, max_stock);
+				return;
 			}
 			PrintUserCmdText(client, L"ERR Commodity does not exist");
 		}
@@ -1798,26 +1913,51 @@ namespace PlayerCommands
 		{
 			int item = ToInt(GetParam(args, ' ', 2));
 
-			int curr_item = 1;
-			for (map<UINT, MARKET_ITEM>::iterator i = base->market_items.begin(); i != base->market_items.end(); ++i, curr_item++)
+			int curr_item = 0;
+			for (auto& i : base->market_items)
 			{
-				if (curr_item == item)
+				++curr_item;
+				if (curr_item != item)
 				{
-					i->second.price = 0;
-					i->second.quantity = 0;
-					i->second.min_stock = 0;
-					i->second.max_stock = 0;
-					SendMarketGoodUpdated(base, i->first, i->second);
-					base->market_items.erase(i->first);
-					base->Save();
-
-					int page = ((curr_item + 39) / 40);
-					ShowShopStatus(client, base, L"", page);
-					PrintUserCmdText(client, L"OK");
-					return;
+					continue;
 				}
+				i.second.price = 0;
+				i.second.quantity = 0;
+				i.second.min_stock = 0;
+				i.second.max_stock = 0;
+				SendMarketGoodUpdated(base, i.first, i.second);
+				base->market_items.erase(i.first);
+				base->Save();
+
+				int page = ((curr_item + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE);
+				ShowShopStatus(client, base, L"", page);
+				PrintUserCmdText(client, L"OK");
+				return;
 			}
 			PrintUserCmdText(client, L"ERR Commodity does not exist");
+		}
+		else if (cmd == L"public" || cmd == L"private")
+		{
+			uint item = ToUInt(GetParam(args, ' ', 2));
+
+			if (item < 1 || item > base->market_items.size())
+			{
+				PrintUserCmdText(client, L"ERR Commodity does not exist");
+				return;
+			}
+
+			auto i = std::next(base->market_items.begin(), item - 1);
+
+			if (cmd == L"public")
+				i->second.is_public = true;
+			else
+				i->second.is_public = false;
+			base->Save();
+
+			int page = ((item + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE);
+			ShowShopStatus(client, base, L"", page);
+			PrintUserCmdText(client, L"OK");
+
 		}
 		else if (cmd == L"filter")
 		{
@@ -1834,9 +1974,10 @@ namespace PlayerCommands
 		}
 	}
 
-	void GetNecessitiesStatus(uint client, const wstring &args) {
+	void GetNecessitiesStatus(uint client, const wstring& args)
+	{
 		// Check that this player is in a player controlled base
-		PlayerBase *base = GetPlayerBaseForClient(client);
+		PlayerBase* base = GetPlayerBaseForClient(client);
 		if (!base)
 		{
 			PrintUserCmdText(client, L"ERR Not in player base");
@@ -1851,38 +1992,368 @@ namespace PlayerCommands
 
 		uint crewItemCount = base->HasMarketItem(set_base_crew_type);
 		uint crewItemNeed = base->base_level * 200;
-		if (crewItemCount < crewItemNeed) {
+		if (crewItemCount < crewItemNeed)
+		{
 			PrintUserCmdText(client, L"WARNING, CREW COUNT TOO LOW");
 		}
 		PrintUserCmdText(client, L"Crew: %u onboard", crewItemCount);
 
+		uint populationCount = 0;
+		for (uint hash : humanCargoList)
+		{
+			populationCount += base->HasMarketItem(hash);
+		}
+		PrintUserCmdText(client, L"Total population: %u onboard", populationCount);
+
 		PrintUserCmdText(client, L"Crew supplies:");
-		for (map<uint, uint>::iterator i = set_base_crew_consumption_items.begin(); i != set_base_crew_consumption_items.end(); ++i) {
-			const GoodInfo *gi = GoodList::find_by_id(i->first);
-			if (gi)
+		for (uint item : set_base_crew_consumption_items)
+		{
+			const GoodInfo* gi = GoodList::find_by_id(item);
+			if (!gi)
 			{
-				PrintUserCmdText(client, L"|    %s: %u", HkGetWStringFromIDS(gi->iIDSName).c_str(), base->HasMarketItem(i->first));
+				continue;
+			}
+			if (base->market_items.count(item))
+			{
+				PrintUserCmdText(client, L"|    %s: %u/%u", HkGetWStringFromIDS(gi->iIDSName).c_str(), base->HasMarketItem(item), base->market_items[item].max_stock);
+			}
+			else
+			{
+				PrintUserCmdText(client, L"|    %s: %u/0", HkGetWStringFromIDS(gi->iIDSName).c_str(), base->HasMarketItem(item));
 			}
 		}
-		
+
 		uint foodCount = 0;
-		for (map<uint, uint>::iterator i = set_base_crew_food_items.begin(); i != set_base_crew_food_items.end(); ++i) {
-			foodCount += base->HasMarketItem(i->first);
+		uint maxFoodCount = 0;
+		for (uint item : set_base_crew_food_items)
+		{
+			foodCount += base->HasMarketItem(item);
+			if (base->market_items.count(item))
+				maxFoodCount += base->market_items[item].max_stock;
 		}
-		PrintUserCmdText(client, L"|    Food: %u", foodCount);
+		PrintUserCmdText(client, L"|    Food: %u/%u", foodCount, maxFoodCount);
 
 		PrintUserCmdText(client, L"Repair materials:");
-		for (list<REPAIR_ITEM>::iterator i = set_base_repair_items.begin(); i != set_base_repair_items.end(); ++i) {
-
-			const GoodInfo *gi = GoodList::find_by_id(i->good);
-			if (gi)
+		for (auto& i : set_base_repair_items)
+		{
+			const GoodInfo* gi = GoodList::find_by_id(i.good);
+			if (!gi)
 			{
-				PrintUserCmdText(client, L"|    %s: %u", HkGetWStringFromIDS(gi->iIDSName).c_str(), base->HasMarketItem(i->good));
+				continue;
+			}
+			if (base->market_items.count(i.good))
+			{
+				PrintUserCmdText(client, L"|    %s: %u/%u", HkGetWStringFromIDS(gi->iIDSName).c_str(), base->HasMarketItem(i.good), base->market_items[i.good].max_stock);
+			}
+			else
+			{
+				PrintUserCmdText(client, L"|    %s: %u/0", HkGetWStringFromIDS(gi->iIDSName).c_str(), base->HasMarketItem(i.good));
 			}
 		}
 	}
 
-	void BaseDeploy(uint client, const wstring &args)
+	bool CheckSolarDistances(uint client, uint systemID, Vector pos)
+	{
+		// Other POB Check
+		if (minOtherPOBDistance > 0)
+		{
+			for (const auto& base : player_bases)
+			{
+				// do not check POBs in a different system
+				if (base.second->system != systemID
+					|| (base.second->position.x == pos.x
+						&& base.second->position.y == pos.y
+						&& base.second->position.z == pos.z))
+				{
+					continue;
+				}
+
+				float distance = HkDistance3D(pos, base.second->position);
+				if (distance < minOtherPOBDistance)
+				{
+					if (client)
+					{
+						PrintUserCmdText(client, L"%ls is too close! Current: %um, Minimum: %um", base.second->basename.c_str(), static_cast<uint>(distance), static_cast<uint>(minOtherPOBDistance));
+					}
+					else
+					{
+						ConPrint(L"Base is too close to another Player Base, distance %um, min %um, name %ls", static_cast<uint>(distance), static_cast<uint>(minOtherPOBDistance), base.second->basename.c_str());
+					}
+					return false;
+				}
+			}
+		}
+
+		// Mining Zone Check
+		CmnAsteroid::CAsteroidSystem* asteroidSystem = CmnAsteroid::Find(systemID);
+		if (asteroidSystem && minMiningDistance > 0)
+		{
+			for (CmnAsteroid::CAsteroidField* cfield = asteroidSystem->FindFirst(); cfield; cfield = asteroidSystem->FindNext())
+			{
+				auto& zone = cfield->zone;
+				if (!zone->lootableZone)
+				{
+					continue;
+				}
+
+				if (lowTierMiningCommoditiesSet.count(zone->lootableZone->dynamic_loot_commodity))
+				{
+					continue;
+				}
+
+				float distance = pub::Zone::GetDistance(zone->iZoneID, pos); // returns distance from the nearest point at the edge of the zone, value is negative if you're within the zone.
+
+				if (distance <= 0)
+				{
+					if (client)
+					{
+						PrintUserCmdText(client, L"You can't deploy inside a mining field!");
+					}
+					else
+					{
+						if (zone->idsName)
+						{
+							ConPrint(L"Base is within the %ls mining zone", HkGetWStringFromIDS(zone->idsName).c_str());
+						}
+						else
+						{
+							const GoodInfo* gi = GoodList::find_by_id(zone->lootableZone->dynamic_loot_commodity);
+							ConPrint(L"Base is within the unnamed %ls mining zone", HkGetWStringFromIDS(gi->iIDSName).c_str());
+						}
+					}
+					return false;
+				}
+				else if (distance < minMiningDistance)
+				{
+					if (zone->idsName)
+					{
+						if (client)
+						{
+							PrintUserCmdText(client, L"Distance to %ls too close, Current: %um, Minimum: %um.", HkGetWStringFromIDS(zone->idsName).c_str(), static_cast<uint>(distance), static_cast<uint>(minMiningDistance));
+						}
+						else
+						{
+							ConPrint(L"Base is too close to %ls, distance: %um.", HkGetWStringFromIDS(zone->idsName).c_str(), static_cast<uint>(distance));
+						}
+					}
+					else
+					{
+						const GoodInfo* gi = GoodList::find_by_id(zone->lootableZone->dynamic_loot_commodity);
+						if (client)
+						{
+							PrintUserCmdText(client, L"Distance to unnamed %ls field too close, minimum distance: %um.", HkGetWStringFromIDS(gi->iIDSName).c_str(), static_cast<uint>(minMiningDistance));
+						}
+						else
+						{
+							ConPrint(L"Base is too close to unnamed %ls field, distance: %um.", HkGetWStringFromIDS(gi->iIDSName).c_str(), static_cast<uint>(distance));
+						}
+					}
+					return false;
+				}
+			}
+		}
+
+		// Solars
+		bool foundSystemMatch = false;
+		for (CSolar* solar = dynamic_cast<CSolar*>(CObject::FindFirst(CObject::CSOLAR_OBJECT)); solar;
+			solar = dynamic_cast<CSolar*>(CObject::FindNext()))
+		{
+			//solars are iterated on per system, we can stop once we're done scanning the last solar in the system we're looking for.
+			if (solar->system != systemID)
+			{
+				if (foundSystemMatch)
+					break;
+				continue;
+			}
+			else
+			{
+				foundSystemMatch = true;
+			}
+
+			float distance = HkDistance3D(solar->get_position(), pos);
+			switch (solar->type)
+			{
+				case Planet:
+				case Moon:
+				{
+					if (distance < (minPlanetDistance + solar->get_radius())) // In case of planets, we only care about distance from actual surface, since it can vary wildly
+					{
+						uint idsName = solar->get_name();
+						if (!idsName) idsName = solar->get_archetype()->iIdsName;
+						if (client)
+						{
+							PrintUserCmdText(client, L"%ls too close. Current: %um, Minimum distance: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance - solar->get_radius()), static_cast<uint>(minPlanetDistance));
+						}
+						else
+						{
+							ConPrint(L"Base too close to %ls, distance: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance - solar->get_radius()));
+						}
+						return false;
+					}
+					break;
+				}
+				case DockingRing:
+				case Station:
+				{
+					if (distance < minStationDistance)
+					{
+						uint idsName = solar->get_name();
+						if (!idsName) idsName = solar->get_archetype()->iIdsName;
+						if (client)
+						{
+							PrintUserCmdText(client, L"%ls too close. Current: %um, Minimum distance: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance), static_cast<uint>(minStationDistance));
+						}
+						else
+						{
+							ConPrint(L"Base too close to %ls, Current: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance));
+						}
+						return false;
+					}
+					break;
+				}
+				case TradelaneRing:
+				{
+					if (distance < minLaneDistance)
+					{
+						if (client)
+						{
+							PrintUserCmdText(client, L"Trade Lane Ring is too close. Current: %um, Minimum distance: %um", static_cast<uint>(distance), static_cast<uint>(minLaneDistance));
+						}
+						else
+						{
+							ConPrint(L"Trade Lane too close, distance: %um", static_cast<uint>(distance));
+						}
+						return false;
+					}
+					break;
+				}
+				case JumpGate:
+				case JumpHole:
+				{
+					if (distance < minJumpDistance)
+					{
+						uint idsName = solar->get_name();
+						if (!idsName) idsName = solar->get_archetype()->iIdsName;
+
+						if (client)
+						{
+							PrintUserCmdText(client, L"%ls too close. Current: %um, Minimum distance: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance), static_cast<uint>(minJumpDistance));
+						}
+						else
+						{
+							ConPrint(L"Base too close to %ls, distance: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance));
+						}
+						return false;
+					}
+					break;
+				}
+				case Satellite:
+				case WeaponPlatform:
+				case DestructibleDepot:
+				case MissionSatellite:
+				{
+					if (distance < minDistanceMisc)
+					{
+						uint idsName = solar->get_name();
+						if (!idsName) idsName = solar->get_archetype()->iIdsName;
+						if (client)
+						{
+							PrintUserCmdText(client, L"%ls too close. Current: %um, Minimum distance: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance), static_cast<uint>(minDistanceMisc));
+						}
+						else
+						{
+							ConPrint(L"Base too close to %ls, distance: %um", HkGetWStringFromIDS(idsName).c_str(), static_cast<uint>(distance));
+						}
+						return false;
+					}
+					break;
+				}
+				case NonTargetable:
+				{
+
+					if (distance < minDistanceMisc)
+					{
+						uint idsName = solar->get_name();
+						if (!idsName) idsName = solar->get_archetype()->iIdsName;
+						if (client)
+						{
+							PrintUserCmdText(client, L"Untargetable object too close. Current: %um, Minimum distance: %um", static_cast<uint>(distance), static_cast<uint>(minDistanceMisc));
+						}
+						else
+						{
+							ConPrint(L"Base too close to an untargetable object, distance: %um", static_cast<uint>(distance));
+						}
+						return false;
+					}
+					break;
+				}
+			}
+		}
+
+		return true;
+	}
+
+	void BaseTestDeploy(uint client, const wstring& args)
+	{
+		if (!enableDistanceCheck)
+		{
+			PrintUserCmdText(client, L"Bases can be deployed anywhere!");
+			return;
+		}
+
+		uint systemId;
+		pub::Player::GetSystem(client, systemId);
+		if (bannedSystemList.count(systemId))
+		{
+			PrintUserCmdText(client, L"ERR Deploying base in this system is not possible");
+			return;
+		}
+
+		uint ship;
+		pub::Player::GetShip(client, ship);
+		if (!ship)
+		{
+			PrintUserCmdText(client, L"ERR Not in space");
+			return;
+		}
+
+		// If the ship is moving, abort the processing.
+		Vector dir1;
+		Vector dir2;
+		pub::SpaceObj::GetMotion(ship, dir1, dir2);
+		if (dir1.x > 5 || dir1.y > 5 || dir1.z > 5)
+		{
+			PrintUserCmdText(client, L"ERR Ship is moving");
+			return;
+		}
+
+		Vector position;
+		Matrix rotation;
+		pub::SpaceObj::GetLocation(ship, position, rotation);
+		Rotate180(rotation);
+		TranslateX(position, rotation, 1000);
+		auto& cooldown = deploymentCooldownMap.find(client);
+		if (cooldown != deploymentCooldownMap.end() && (uint)time(0) < cooldown->second)
+		{
+			PrintUserCmdText(client, L"Command still on cooldown, %us remaining.", cooldown->second);
+			return;
+		}
+		else
+		{
+			deploymentCooldownMap[client] = (uint)time(0) + deploymentCooldownDuration;
+		}
+
+		if (!CheckSolarDistances(client, systemId, position))
+		{
+			PrintUserCmdText(client, L"Base cannot be deployed here");
+		}
+		else
+		{
+			PrintUserCmdText(client, L"Base can be deployed at current location. Use /pos to record it for later use.");
+		}
+	}
+
+	void BaseDeploy(uint client, const wstring& args)
 	{
 		if (set_holiday_mode)
 		{
@@ -1897,6 +2368,14 @@ namespace PlayerCommands
 		if (set_construction_shiparch != 0 && shiparch != set_construction_shiparch)
 		{
 			PrintUserCmdText(client, L"ERR Need construction ship");
+			return;
+		}
+
+		uint systemId;
+		pub::Player::GetSystem(client, systemId);
+		if (bannedSystemList.count(systemId))
+		{
+			PrintUserCmdText(client, L"ERR Deploying base in this system is not possible");
 			return;
 		}
 
@@ -1940,37 +2419,91 @@ namespace PlayerCommands
 			return;
 		}
 
-		// Check that the ship has the requires commodities.
+		// Check that the ship has the requires commodities and credits.
+		if (construction_credit_cost)
+		{
+			int cash;
+			pub::Player::InspectCash(client, cash);
+			if (cash < construction_credit_cost)
+			{
+				PrintUserCmdText(client, L"ERR Insufficient money, %u needed", construction_credit_cost);
+				return;
+			}
+		}
+
 		int hold_size;
 		list<CARGO_INFO> cargo;
 		HkEnumCargo((const wchar_t*)Players.GetActiveCharacterName(client), cargo, hold_size);
-		for (map<uint, uint>::iterator i = construction_items.begin(); i != construction_items.end(); ++i)
+		for (auto& i : construction_items)
 		{
 			bool material_available = false;
-			uint good = i->first;
-			uint quantity = i->second;
-			for (list<CARGO_INFO>::iterator ci = cargo.begin(); ci != cargo.end(); ++ci)
+			uint good = i.first;
+			uint quantity = i.second;
+			for (CARGO_INFO& ci : cargo)
 			{
-				if (ci->iArchID == good && ci->iCount >= (int)quantity)
+				if (ci.iArchID == good && ci.iCount >= static_cast<int>(quantity))
 				{
 					material_available = true;
-					pub::Player::RemoveCargo(client, ci->iID, quantity);
+					break;
 				}
 			}
 			if (material_available == false)
 			{
 				PrintUserCmdText(client, L"ERR Construction failed due to insufficient raw material.");
-				for (i = construction_items.begin(); i != construction_items.end(); ++i)
+				for (auto& i : construction_items)
 				{
-					const GoodInfo *gi = GoodList::find_by_id(i->first);
+					const GoodInfo* gi = GoodList::find_by_id(i.first);
 					if (gi)
 					{
-						PrintUserCmdText(client, L"|  %ux %s", i->second, HkGetWStringFromIDS(gi->iIDSName).c_str());
+						PrintUserCmdText(client, L"|  %ux %s", i.second, HkGetWStringFromIDS(gi->iIDSName).c_str());
 					}
 				}
 				return;
 			}
 		}
+		//passed cargo check, now make the distance check
+
+		Vector position;
+		Matrix rotation;
+		pub::SpaceObj::GetLocation(ship, position, rotation);
+		Rotate180(rotation);
+		TranslateX(position, rotation, 1000);
+		if (enableDistanceCheck)
+		{
+			auto& cooldown = deploymentCooldownMap.find(client);
+			if (cooldown != deploymentCooldownMap.end() && (uint)time(0) < cooldown->second)
+			{
+				PrintUserCmdText(client, L"Command still on cooldown, %us remaining.", cooldown->second);
+				return;
+			}
+			else
+			{
+				deploymentCooldownMap[client] = (uint)time(0) + deploymentCooldownDuration;
+			}
+
+			if (!CheckSolarDistances(client, systemId, position))
+			{
+				PrintUserCmdText(client, L"ERR Deployment failed.");
+				return;
+			}
+		}
+
+		//actually remove the cargo and credits.
+		for (auto& i : construction_items)
+		{
+			uint good = i.first;
+			uint quantity = i.second;
+			for (auto& ci : cargo)
+			{
+				if (ci.iArchID == good)
+				{
+					pub::Player::RemoveCargo(client, ci.iID, quantity);
+					break;
+				}
+			}
+		}
+
+		pub::Player::AdjustCash(client, -construction_credit_cost);
 
 		wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
 		AddLog("NOTICE: Base created %s by %s (%s)",
@@ -1978,27 +2511,147 @@ namespace PlayerCommands
 			wstos(charname).c_str(),
 			wstos(HkGetAccountID(HkGetAccountByCharname(charname))).c_str());
 
-		PlayerBase *newbase = new PlayerBase(client, password, basename);
+		PlayerBase* newbase = new PlayerBase(client, password, basename);
 		player_bases[newbase->base] = newbase;
 		newbase->basetype = "legacy";
 		newbase->basesolar = "legacy";
 		newbase->baseloadout = "legacy";
 		newbase->defense_mode = 1;
+		newbase->isCrewSupplied = true;
 
-		for (map<string, ARCHTYPE_STRUCT>::iterator iter = mapArchs.begin(); iter != mapArchs.end(); iter++)
-		{
+		newbase->invulnerable = mapArchs[newbase->basetype].invulnerable;
+		newbase->logic = mapArchs[newbase->basetype].logic;
 
-			ARCHTYPE_STRUCT &thearch = iter->second;
-			if (iter->first == newbase->basetype)
-			{
-				newbase->invulnerable = thearch.invulnerable;
-				newbase->logic = thearch.logic;
-			}
-		}
 		newbase->Spawn();
 		newbase->Save();
 
 		PrintUserCmdText(client, L"OK: Base deployed");
 		PrintUserCmdText(client, L"Default administration password is %s", password.c_str());
+	}
+
+	void BaseSetVulnerabilityWindow(uint client, const wstring& cmd)
+	{
+		PlayerBase* base = GetPlayerBaseForClient(client);
+		if (!base)
+		{
+			PrintUserCmdText(client, L"ERR Not in player base");
+			return;
+		}
+
+		if (!checkBaseAdminAccess(base, client))
+		{
+			return;
+		}
+
+		uint currTime = time(nullptr);
+
+		if (base->lastVulnerabilityWindowChange + vulnerability_window_change_cooldown > currTime )
+		{
+			PrintUserCmdText(client, L"ERR Can only change vulnerability windows once every %u days, %u days left", vulnerability_window_change_cooldown / (3600 * 24), 1 + ((base->lastVulnerabilityWindowChange + vulnerability_window_change_cooldown - currTime) / (3600 * 24)));
+			return;
+		}
+		wstring param1Str = GetParam(cmd, ' ', 2);
+		wstring param2Str = GetParam(cmd, ' ', 3);
+
+		if (param1Str.empty() || (!single_vulnerability_window && param2Str.empty()))
+		{
+			PrintUserCmdText(client, L"ERR No parameter(s) set");
+			return;
+		}
+
+		int param1 = ToInt(param1Str);
+		int param2 = ToInt(param2Str);
+
+		if (stows(itos(param1)) != param1Str
+			|| (!single_vulnerability_window && stows(itos(param2)) != param2Str))
+		{
+			PrintUserCmdText(client, L"ERR Provided parameter is not a number!");
+			if (single_vulnerability_window)
+			{
+				PrintUserCmdText(client, L"Example input: /base setshield 15");
+			}
+			else
+			{
+				PrintUserCmdText(client, L"Example input: /base setshield 15 23");
+			}
+			return;
+		}
+
+		if (param1 < 0 || param1 > 23
+			|| (!single_vulnerability_window && (param2 < 0 || param2 > 23)))
+		{
+			PrintUserCmdText(client, L"ERR Vulnerability windows can only be set to full hour values between 0 and 23");
+			return;
+		}
+
+		int vulnerabilityWindowOneStart = param1 * 60; // minutes
+		int vulnerabilityWindowOneEnd = (vulnerabilityWindowOneStart + vulnerability_window_length) % (60 * 24);
+		int vulnerabilityWindowTwoStart = param2 * 60;
+		int vulnerabilityWindowTwoEnd = (vulnerabilityWindowTwoStart + vulnerability_window_length) % (60 * 24);
+
+		if (single_vulnerability_window)
+		{
+			base->vulnerabilityWindow1 = { vulnerabilityWindowOneStart, vulnerabilityWindowOneEnd };
+			base->lastVulnerabilityWindowChange = currTime;
+			PrintUserCmdText(client, L"OK Vulnerability window set.");
+			return;
+		}
+
+		if ((vulnerabilityWindowOneStart < vulnerabilityWindowTwoStart && abs(vulnerabilityWindowOneEnd - vulnerabilityWindowTwoStart) < vulnerability_window_minimal_spread)
+			|| (vulnerabilityWindowOneStart > vulnerabilityWindowTwoStart && abs(vulnerabilityWindowOneStart - vulnerabilityWindowTwoEnd) < vulnerability_window_minimal_spread))
+		{
+			PrintUserCmdText(client, L"ERR Vulnerability windows must be at least %u hours apart!", vulnerability_window_minimal_spread / 60);
+			return;
+		}
+
+		base->vulnerabilityWindow1 = { vulnerabilityWindowOneStart, vulnerabilityWindowOneEnd % (60 * 24)};
+		if (!single_vulnerability_window)
+		{
+			base->vulnerabilityWindow2 = { vulnerabilityWindowTwoStart, vulnerabilityWindowTwoEnd % (60 * 24) };
+		}
+		base->lastVulnerabilityWindowChange = currTime;
+
+		PrintUserCmdText(client, L"OK Vulnerability window set.");
+	}
+
+	void BaseCheckVulnerabilityWindow(uint client)
+	{
+		uint ship;
+		pub::Player::GetShip(client, ship);
+
+		if (!ship)
+		{
+			PrintUserCmdText(client, L"ERR not in space!");
+			return;
+		}
+
+		uint target;
+		pub::SpaceObj::GetTarget(ship, target);
+
+		if (!target)
+		{
+			PrintUserCmdText(client, L"ERR no base targeted");
+			return;
+		}
+
+		PlayerBase* pb = GetPlayerBase(target);
+
+		if (!pb)
+		{
+			PrintUserCmdText(client, L"ERR no base targeted");
+			return;
+		}
+
+		if (single_vulnerability_window)
+		{
+			PrintUserCmdText(client, L"This base has its vulnerability window between %u:00-%u:%02u", 
+				pb->vulnerabilityWindow1.start / 60, pb->vulnerabilityWindow1.end / 60, pb->vulnerabilityWindow1.end % 60);
+		}
+		else
+		{
+			PrintUserCmdText(client, L"This base has its vulnerability windows between %u:00-%u:%02u and %u:00-%u:%02u", 
+				pb->vulnerabilityWindow1.start / 60, pb->vulnerabilityWindow1.end / 60, pb->vulnerabilityWindow1.end % 60,
+				pb->vulnerabilityWindow2.start / 60, pb->vulnerabilityWindow2.end / 60, pb->vulnerabilityWindow2.end % 60);
+		}
 	}
 }

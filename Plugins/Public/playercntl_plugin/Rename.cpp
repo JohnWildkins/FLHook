@@ -427,6 +427,10 @@ namespace Rename
 				if (!acc)
 					throw "no acc";
 
+				CUSTOM_RENAME_NOTIFICATION_STRUCT info;
+				info.currentName = o.wscCharname;
+				Plugin_Communication(CUSTOM_RENAME_NOTIFICATION, &info);
+
 				HkLockAccountAccess(acc, true);
 				HkUnlockAccountAccess(acc);
 

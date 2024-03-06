@@ -15,6 +15,55 @@ struct SOCKET_CONNECTION
 	CSocket	csock;
 };
 
+
+void PrintCorePerf()
+{
+	ConPrint(L"Dumping...\n");
+	struct perfData {
+		string name;
+		uint64_t min = UINT64_MAX;
+		uint64_t max = 0;
+		uint64_t average = 0;
+		uint64_t count = 0;
+		uint64_t sum = 0;
+	};
+
+	for (auto& coreCall : coreExecutionMap)
+	{
+		fprintf(perfMonitorLog, "%s\n", coreCall.first.c_str());
+		fflush(perfMonitorLog);
+		for (uint64_t call : coreCall.second)
+		{
+			fprintf(perfMonitorLog, "\t%llu\n", call);
+			fflush(perfMonitorLog);
+		}
+	}
+
+	for (auto& coreCall : coreExecutionMap)
+	{
+		perfData data;
+		data.name = coreCall.first;
+		data.count = coreCall.second.size();
+		for (uint64_t call : coreCall.second)
+		{
+			if (data.min > call)
+			{
+				data.min = call;
+			}
+			if (data.max < call)
+			{
+				data.max = call;
+			}
+			data.sum += call;
+		}
+		data.average = data.sum / data.count;
+		fprintf(perfMonitorLog, "%s\nmin: %llu\nmax: %llu\navg: %llu\ncount: %llu\nsum: %llu\n\n", coreCall.first.c_str(), data.min, data.max, data.average, data.count, data.sum);
+		fflush(perfMonitorLog);
+	}
+	ConPrint(L"Dumping Complete...\n");
+	coreExecutionMap.clear();
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 HANDLE hProcFL = 0;
@@ -45,6 +94,7 @@ CRITICAL_SECTION cs;
 
 FILE *fLog = 0;
 FILE *fLogDebug = 0;
+FILE *perfMonitorLog = 0;
 
 bool bExecuted = false;
 
@@ -101,6 +151,18 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 		pAddress = (void*)((char*)GetModuleHandle(0) + ADDR_SHUTDOWN);
 		WriteProcMem(pAddress, &fpShutdown, 4);
 
+		hModCommon = GetModuleHandle("common");
+
+		BYTE patch3[] = { 0x04 };
+		BYTE patch4[] = { 0x08 };
+		BYTE patch5[] = { 0x10 };
+		BYTE patch6[] = { 0x20 };
+
+		WriteProcMem((char*)hModCommon + 0x18c8b6, patch3, 1);
+		WriteProcMem((char*)hModCommon + 0x18c8be, patch4, 1);
+		WriteProcMem((char*)hModCommon + 0x18c8c6, patch5, 1);
+		WriteProcMem((char*)hModCommon + 0x18c8ce, patch6, 1);
+
 		// create log dirs
 		CreateDirectoryA("./flhook_logs/", NULL);
 		CreateDirectoryA("./flhook_logs/debug", NULL);
@@ -117,7 +179,8 @@ BYTE oldSetUnhandledExceptionFilter[5];
 LONG WINAPI FLHookTopLevelFilter(struct _EXCEPTION_POINTERS *pExceptionInfo)
 {
 	AddLog("!!TOP LEVEL EXCEPTION!!");
-	WriteMiniDump(pExceptionInfo);
+	SEHException ex(0, pExceptionInfo);
+	WriteMiniDump(&ex);
 	return EXCEPTION_EXECUTE_HANDLER; 	// EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -249,6 +312,8 @@ void FLHookInit_Pre()
 		strftime(szDate, sizeof(szDate), "%d.%m.%Y_%H.%M", t);
 		sDebugLog = "./flhook_logs/debug/FLHookDebug_" + (string)szDate;
 		sDebugLog += ".log";
+
+		perfMonitorLog = fopen("./flhook_logs/perfTimer.log", "at");
 
 		//check what plugins should be loaded; we need to read out the settings ourselves cause LoadSettings() wasn't called yet
 		char szCurDir[MAX_PATH];
@@ -525,6 +590,7 @@ void FLHookShutdown()
 
 	// close log
 	fclose(fLog);
+	fclose(perfMonitorLog);
 	if (set_bDebug)
 		fclose(fLogDebug);
 
@@ -632,6 +698,26 @@ void ConPrint(wstring wscText, ...)
 	WriteConsole(hConsoleOut, scText.c_str(), (DWORD)scText.length(), &iCharsWritten, 0);
 }
 
+void AddPerfTimer(const char* szString, ...)
+{
+	char szBufString[1024];
+	va_list marker;
+	va_start(marker, szString);
+	_vsnprintf(szBufString, sizeof(szBufString) - 1, szString, marker);
+
+	if (perfMonitorLog) {
+		char szBuf[64];
+		time_t tNow = time(0);
+		struct tm* t = localtime(&tNow);
+		strftime(szBuf, sizeof(szBuf), "%S", t);
+		fprintf(perfMonitorLog, "%s %s\n", szBuf, szBufString);
+		fflush(perfMonitorLog);
+	}
+	else {
+		ConPrint(L"Failed to write log! This might be due to inability to create the directory - are you running as an administrator?\n");
+	}
+}
+
 /**************************************************************************************************************
 send event to all sockets which are in eventmode
 **************************************************************************************************************/
@@ -644,8 +730,6 @@ void ProcessEvent(wstring wscText, ...)
 	_vsnwprintf(wszBuf, (sizeof(wszBuf) / 2) - 1, wscText.c_str(), marker);
 
 	wscText = wszBuf;
-
-	CALL_PLUGINS_V(PLUGIN_ProcessEvent_BEFORE, , (wstring &wscText), (wscText));
 
 	foreach(lstSockets, SOCKET_CONNECTION*, i)
 	{
@@ -713,7 +797,8 @@ struct timeval tv = { 0, 0 };
 
 void ProcessPendingCommands()
 {
-	try {
+	LOG_CORE_TIMER_START
+	TRY_HOOK { 
 		// check for new console commands
 		EnterCriticalSection(&cs);
 		while (lstConsoleCmds.size())
@@ -924,9 +1009,6 @@ void ProcessPendingCommands()
 		}
 
 		lstDelete.clear();
-	}
-	catch (...) {
-		LOG_EXCEPTION
-			throw "exception";
-	}
+	} CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 }

@@ -18,7 +18,7 @@ uint HkGetClientIdFromAccount(CAccount *acc)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-uint HkGetClientIdFromPD(struct PlayerData *pPD)
+inline uint HkGetClientIdFromPD(struct PlayerData *pPD)
 {
 	return pPD->iOnlineID;
 }
@@ -216,12 +216,12 @@ HK_ERROR HkResolveShortCut(const wstring &wscShortcut, uint &_iClientID)
 
 uint HkGetClientIDByShip(uint iShip)
 {
-	for (uint i = 0; i <= MAX_CLIENT_ID; i++)
+	CShip* cobj = reinterpret_cast<CShip*>(CObject::Find(iShip, CObject::CSHIP_OBJECT));
+	if (cobj)
 	{
-		if (ClientInfo[i].iShip == iShip || ClientInfo[i].iShipOld == iShip)
-			return i;
+		cobj->Release();
+		return cobj->GetOwnerPlayer();
 	}
-
 	return 0;
 }
 
@@ -301,7 +301,7 @@ wstring HkGetPlayerSystem(uint iClientID)
 {
 	uint iSystemID;
 	pub::Player::GetSystem(iClientID, iSystemID);
-	char szSystemname[1024] = "";
+	char szSystemname[64] = "";
 	pub::GetSystemNickname(szSystemname, sizeof(szSystemname), iSystemID);
 	return stows(szSystemname);
 }
@@ -400,14 +400,15 @@ EQ_TYPE HkGetEqType(Archetype::Equipment *eq)
 	uint iVFTable = *((uint*)eq);
 	if (iVFTable == iVFTableGun) {
 		Archetype::Gun *gun = (Archetype::Gun *)eq;
-		Archetype::Equipment *eqAmmo = Archetype::GetEquipment(gun->iProjectileArchID);
+		Archetype::Equipment *eqAmmo = (Archetype::Munition*)Archetype::GetEquipment(gun->iProjectileArchID);
+		Archetype::Munition *eqAmmoMunition = (Archetype::Munition*)eqAmmo;
 		int iMissile;
 		memcpy(&iMissile, (char*)eqAmmo + 0x90, 4);
 		uint iGunType = gun->get_hp_type_by_index(0);
-		if (iGunType == 36)
-			return ET_TORPEDO;
-		else if (iGunType == 35)
+		if (eqAmmoMunition && eqAmmoMunition->bCruiseDisruptor)
 			return ET_CD;
+		else if (iGunType == 36)
+			return ET_TORPEDO;
 		else if (iMissile)
 			return ET_MISSILE;
 		else

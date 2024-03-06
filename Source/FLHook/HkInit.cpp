@@ -42,18 +42,26 @@ PATCH_INFO piServerDLL =
 {
 	"server.dll", 0x6CE0000,
 	{
-		{0x6D67274,		&ShipDestroyedHook,							4, &fpOldShipDestroyed,			false},
-		{0x6D641EC,		&_HkCb_AddDmgEntry,							4, 0,							false},
-		{0x6D67320,		&_HookMissileTorpHit,						4, &fpOldMissileTorpHit,		false},
-		{0x6D65448,		&_HookMissileTorpHit,						4, 0,							false},
-		{0x6D67670,		&_HookMissileTorpHit,						4, 0,							false},
-		{0x6D653F4,		&_HkCb_GeneralDmg,							4, &fpOldGeneralDmg,			false},
-		{0x6D672CC,		&_HkCb_GeneralDmg,							4, 0,							false},
-		{0x6D6761C,		&_HkCb_GeneralDmg,							4, 0,							false},
-		{0x6D65458,		&_HkCb_GeneralDmg2,							4, &fpOldGeneralDmg2,			false},
-		{0x6D67330,		&_HkCb_GeneralDmg2,							4, 0,							false},
-		{0x6D67680,		&_HkCb_GeneralDmg2,							4, 0,							false},
-		{0x6D67668,		&_HkCb_NonGunWeaponHitsBase,				4, &fpOldNonGunWeaponHitsBase,	false},
+		//{0x6D67288,		&envDmgShip,	4,	&fpEnvDmg,	false},
+		{0x6D661C4,		&MineDestroyedNaked,				4, &MineDestroyedOrigFunc,		false},
+		{0x6D66694,		&GuidedDestroyedNaked,				4, &GuidedDestroyedOrigFunc,		false},
+		{0x6D672D4,		&AllowPlayerDamageNaked,				4, &AllowPlayerDamageOrigFunc,		false},
+		{0x6D6733C,		&ShipColGrpDestroyedHookNaked,				4, &ColGrpDeathOrigFunc,		false},
+		{0x6D6768C,		&SolarColGrpDestroyedHookNaked,				4, 0,							false},
+		{0x6D67274,		&ShipDestroyedNaked,							4, &fpOldShipDestroyed,			false},
+		{0x6D02D10,		&SolarDestroyedNaked,							4, &fpOldSolarDestroyed,			false},
+		//{0x6D641EC,		&_HkCb_AddDmgEntry,							4, 0,							false},
+		{0x06D672A0,		&HookExplosionHitNaked,						4, &fpOldExplosionHit,		false},
+		//{0x6D65448,		&_HookMissileTorpHit,						4, 0,							false},
+		//{0x6D67670,		&_HookMissileTorpHit,						4, 0,							false},
+		//{0x6D653F4,		&_HkCb_GeneralDmg,							4, &fpOldGeneralDmg,			false},
+		{0x6D672CC,		&ShipHullDamageNaked,							4, &ShipHullDamageOrigFunc,							false},
+		{0x6D6761C,		&SolarHullDamageNaked,							4, &SolarHullDamageOrigFunc,							false},
+		//{0x6D6761C,		&_HkCb_GeneralDmg,							4, 0,							false},
+		//{0x6D65458,		&_HkCb_GeneralDmg2,							4, &fpOldGeneralDmg2,			false},
+		//{0x6D67330,		&_HkCb_GeneralDmg2,							4, 0,							false},
+		//{0x6D67680,		&_HkCb_GeneralDmg2,							4, 0,							false},
+		//{0x6D67668,		&_HkCb_NonGunWeaponHitsBase,				4, &fpOldNonGunWeaponHitsBase,	false},
 		{0x6D6420C,		&HkIEngine::_LaunchPos,						4, &HkIEngine::fpOldLaunchPos,	false},
 		{0x6D648E0,		&HkIEngine::FreeReputationVibe,				4, 0,							false},
 
@@ -155,7 +163,7 @@ char *g_FLServerDataPtr;
 
 _GetShipInspect GetShipInspect;
 
-list<BASE_INFO> lstBases;
+unordered_map<uint, BASE_INFO> lstBases;
 
 char szRepFreeFixOld[5];
 
@@ -166,10 +174,10 @@ clear the clientinfo
 
 void ClearClientInfo(uint iClientID)
 {
-	ClientInfo[iClientID].dieMsg = DIEMSG_ALL;
+	ClientInfo[iClientID].dieMsg = DIEMSG_ALL_NOCONN;
 	ClientInfo[iClientID].iShip = 0;
 	ClientInfo[iClientID].iShipOld = 0;
-	ClientInfo[iClientID].tmSpawnTime = 0;
+	ClientInfo[iClientID].tmProtectedUntil = 0;
 	ClientInfo[iClientID].lstMoneyFix.clear();
 	ClientInfo[iClientID].iTradePartner = 0;
 	ClientInfo[iClientID].iBaseEnterTime = 0;
@@ -182,8 +190,8 @@ void ClearClientInfo(uint iClientID)
 	ClientInfo[iClientID].tmF1Time = 0;
 	ClientInfo[iClientID].tmF1TimeDisconnect = 0;
 
-	DamageList dmg;
-	ClientInfo[iClientID].dmgLast = dmg;
+	ClientInfo[iClientID].dmgLastCause = DamageCause::Unknown;
+	ClientInfo[iClientID].dmgLastPlayerId = 0;
 	ClientInfo[iClientID].dieMsgSize = CS_DEFAULT;
 	ClientInfo[iClientID].chatSize = CS_DEFAULT;
 	ClientInfo[iClientID].chatStyle = CST_DEFAULT;
@@ -203,8 +211,6 @@ void ClearClientInfo(uint iClientID)
 	ClientInfo[iClientID].bThrusterActivated = false;
 	ClientInfo[iClientID].bTradelane = false;
 
-	ClientInfo[iClientID].bSpawnProtected = false;
-
 	CALL_PLUGINS_V(PLUGIN_ClearClientInfo, , (uint), (iClientID));
 }
 
@@ -220,7 +226,7 @@ void LoadUserSettings(uint iClientID)
 	string scUserFile = scAcctPath + wstos(wscDir) + "\\flhookuser.ini";
 
 	// read diemsg settings
-	ClientInfo[iClientID].dieMsg = (DIEMSGTYPE)IniGetI(scUserFile, "settings", "DieMsg", DIEMSG_ALL);
+	ClientInfo[iClientID].dieMsg = (DIEMSGTYPE)IniGetI(scUserFile, "settings", "DieMsg", DIEMSG_ALL_NOCONN);
 	ClientInfo[iClientID].dieMsgSize = (CHATSIZE)IniGetI(scUserFile, "settings", "DieMsgSize", CS_DEFAULT);
 
 	// read chatstyle settings
@@ -276,6 +282,17 @@ void LoadUserCharSettings(uint iClientID)
 install the callback hooks
 **************************************************************************************************************/
 
+typedef bool(__thiscall* radType) (IObjRW* iobj, float deltaTime, float* dunno);
+radType radTypeMethod;
+
+#pragma optimize("", off)
+bool __fastcall insteadMethod(IObjRW* iobj, void* edx, float deltaTime, float* dunno)
+{
+	radTypeMethod(iobj, 60.0f, dunno);
+	return true;
+}
+#pragma optimize("", on)
+
 bool InitHookExports()
 {
 	char	*pAddress;
@@ -300,12 +317,24 @@ bool InitHookExports()
 	Patch(piRemoteClientDLL);
 	Patch(piDaLibDLL);
 
+	//PatchCallAddr((char*)hModServer, 0x21258, (char*)insteadMethod);
+	//radTypeMethod = radType((char*)hModServer + 0x212E0);
 
 	// patch rep array free
 	char szNOPs[] = { '\x90','\x90','\x90','\x90','\x90' };
 	pAddress = ((char*)hModServer + ADDR_SRV_REPARRAYFREE);
 	ReadProcMem(pAddress, szRepFreeFixOld, 5);
 	WriteProcMem(pAddress, szNOPs, 5);
+
+	// jump past a redundant XOR statement
+	pAddress = SRV_ADDR(0x61D6);
+	char szJumpXor[1] = { '\x0D' };
+	WriteProcMem(pAddress, szJumpXor, sizeof(szJumpXor));
+
+	// patch pub::Save method
+	pAddress = SRV_ADDR(0x7EFA8);
+	char szNop[2] = { '\x90', '\x90' };
+	WriteProcMem(pAddress, szNop, sizeof(szNop)); // nop the SinglePlayer() check
 
 	// patch flserver so it can better handle faulty house entries in char files
 
@@ -314,6 +343,11 @@ bool InitHookExports()
 	char szDivertJump[] = { '\x6F' };
 
 	WriteProcMem(pAddress, szDivertJump, 1);
+
+	// jump out of the crash trap in TradeLane/SPObjUpdate related code
+	pAddress = (char*)hModCommon + 0xF24A0;
+	char szSkipCrash[2] = { '\xEB', '\x28' };
+	WriteProcMem(pAddress, szSkipCrash, 2);
 
 	// install hook at new address
 	pAddress = SRV_ADDR(0x78B39);

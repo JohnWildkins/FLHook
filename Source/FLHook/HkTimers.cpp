@@ -46,9 +46,12 @@ void HkTimerCheckKick()
 	CALL_PLUGINS_V(PLUGIN_HkTimerCheckKick, , (), ());
 
 
-	try {
+	LOG_CORE_TIMER_START
+	TRY_HOOK {
 		// for all players
 		struct PlayerData *pPD = 0;
+		mstime msTime = timeInMS();
+		time_t currTime = time(0);
 		while (pPD = Players.traverse_active(pPD))
 		{
 			uint iClientID = HkGetClientIdFromPD(pPD);
@@ -57,7 +60,7 @@ void HkTimerCheckKick()
 
 			if (ClientInfo[iClientID].tmKickTime)
 			{
-				if (timeInMS() >= ClientInfo[iClientID].tmKickTime)
+				if (msTime >= ClientInfo[iClientID].tmKickTime)
 				{
 					HkKick(ARG_CLIENTID(iClientID)); // kick time expired
 					ClientInfo[iClientID].tmKickTime = 0;
@@ -65,40 +68,30 @@ void HkTimerCheckKick()
 				continue; // player will be kicked anyway
 			}
 
-			if (set_iAntiBaseIdle)
+			if (set_iAntiBaseIdle && ClientInfo[iClientID].iBaseEnterTime)
 			{ // anti base-idle check
-				uint iBaseID;
-				pub::Player::GetBase(iClientID, iBaseID);
-				if (iBaseID && ClientInfo[iClientID].iBaseEnterTime)
+				if ((currTime - ClientInfo[iClientID].iBaseEnterTime) >= set_iAntiBaseIdle)
 				{
-					if ((time(0) - ClientInfo[iClientID].iBaseEnterTime) >= set_iAntiBaseIdle)
-					{
-						HkAddKickLog(iClientID, L"Base idling");
-						HkMsgAndKick(iClientID, L"Base idling", set_iKickMsgPeriod);
-						ClientInfo[iClientID].iBaseEnterTime = 0;
-					}
+					HkAddKickLog(iClientID, L"Base idling");
+					HkMsgAndKick(iClientID, L"Base idling", set_iKickMsgPeriod);
+					ClientInfo[iClientID].iBaseEnterTime = 0;
 				}
+				continue;
 			}
 
 			if (set_iAntiCharMenuIdle)
 			{ // anti charmenu-idle check
-				if (HkIsInCharSelectMenu(iClientID)) {
-					if (!ClientInfo[iClientID].iCharMenuEnterTime)
-						ClientInfo[iClientID].iCharMenuEnterTime = (uint)time(0);
-					else if ((time(0) - ClientInfo[iClientID].iCharMenuEnterTime) >= set_iAntiCharMenuIdle) {
-						HkAddKickLog(iClientID, L"Charmenu idling");
-						HkKick(ARG_CLIENTID(iClientID));
-						ClientInfo[iClientID].iCharMenuEnterTime = 0;
-						continue;
-					}
-				}
-				else
+				if (ClientInfo[iClientID].iCharMenuEnterTime 
+					&& (currTime - ClientInfo[iClientID].iCharMenuEnterTime) >= set_iAntiCharMenuIdle) {
+					HkAddKickLog(iClientID, L"Charmenu idling");
+					HkKick(ARG_CLIENTID(iClientID));
 					ClientInfo[iClientID].iCharMenuEnterTime = 0;
+				}
 			}
 
 		}
-	}
-	catch (...) { LOG_EXCEPTION }
+	} CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 }
 
 /**************************************************************************************************************
@@ -107,21 +100,21 @@ Check if NPC spawns should be disabled
 
 void HkTimerNPCAndF1Check()
 {
-	CALL_PLUGINS_V(PLUGIN_HkTimerNPCAndF1Check, , (), ());
-
-	try {
-		struct PlayerData *pPD = 0;
+	LOG_CORE_TIMER_START
+	TRY_HOOK {
+		struct PlayerData *pPD = nullptr;
+		mstime currTime = timeInMS();
 		while (pPD = Players.traverse_active(pPD))
 		{
 			uint iClientID = HkGetClientIdFromPD(pPD);
 			if (iClientID < 1 || iClientID > MAX_CLIENT_ID)
 				continue;
 
-			if (ClientInfo[iClientID].tmF1Time && (timeInMS() >= ClientInfo[iClientID].tmF1Time)) { // f1
+			if (ClientInfo[iClientID].tmF1Time && (currTime >= ClientInfo[iClientID].tmF1Time)) { // f1
 				Server.CharacterInfoReq(iClientID, false);
 				ClientInfo[iClientID].tmF1Time = 0;
 			}
-			else if (ClientInfo[iClientID].tmF1TimeDisconnect && (timeInMS() >= ClientInfo[iClientID].tmF1TimeDisconnect)) {
+			else if (ClientInfo[iClientID].tmF1TimeDisconnect && (currTime >= ClientInfo[iClientID].tmF1TimeDisconnect)) {
 				ulong lArray[64] = { 0 };
 				lArray[26] = iClientID;
 				__asm
@@ -144,6 +137,6 @@ void HkTimerNPCAndF1Check()
 			HkChangeNPCSpawn(true); // serverload too high, disable npcs
 		else
 			HkChangeNPCSpawn(false);
-	}
-	catch (...) { LOG_EXCEPTION }
+	} CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 }

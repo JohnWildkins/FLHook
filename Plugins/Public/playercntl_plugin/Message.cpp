@@ -34,8 +34,6 @@
 
 #include <hookext_exports.h>
 
-/// Local chat range
-float set_iLocalChatRangeUtl = 9999;
 
 /// Record people using /pm /r and /t
 /// TODO: Turn this into a generic logging function and move it to PluginUtilities
@@ -58,17 +56,6 @@ void PMLogging(const char *szString, ...)
 	PMLogfile = fopen("./flhook_logs/private_chats.log", "at");
 }
 
-/// Load the configuration
-void LoadSettingsUtl()
-{
-	// The path to the configuration file.
-	char szCurDir[MAX_PATH];
-	GetCurrentDirectory(sizeof(szCurDir), szCurDir);
-	string scPluginCfgFile = string(szCurDir) + "\\flhook_plugins\\playercntl.cfg";
-
-	set_iLocalChatRangeUtl = IniGetF(scPluginCfgFile, "General", "LocalChatRange", 0);
-}
-
 /** Send a player to local system message */
 void SendLocalSystemChat(uint iFromClientID, const wstring &wscText)
 {
@@ -83,7 +70,14 @@ void SendLocalSystemChat(uint iFromClientID, const wstring &wscText)
 
 	Vector vFromShipLoc;
 	Matrix mFromShipDir;
-	pub::SpaceObj::GetLocation(iFromShip, vFromShipLoc, mFromShipDir);
+	if (iFromShip)
+	{
+		pub::SpaceObj::GetLocation(iFromShip, vFromShipLoc, mFromShipDir);
+	}
+	else
+	{
+		vFromShipLoc = Players[iFromClientID].vPosition;
+	}
 
 	// For all players in system...
 	struct PlayerData *pPD = 0;
@@ -101,13 +95,16 @@ void SendLocalSystemChat(uint iFromClientID, const wstring &wscText)
 
 		Vector vShipLoc;
 		Matrix mShipDir;
-		pub::SpaceObj::GetLocation(iShip, vShipLoc, mShipDir);
-
-		// Cheat in the distance calculation. Ignore the y-axis.
-		float fDistance = sqrt(pow(vShipLoc.x - vFromShipLoc.x, 2) + pow(vShipLoc.z - vFromShipLoc.z, 2));
-
+		if (iShip)
+		{
+			pub::SpaceObj::GetLocation(iShip, vShipLoc, mShipDir);
+		}
+		else
+		{
+			vShipLoc = pPD->vPosition;
+		}
 		//Is player within scanner range (15K) of the sending char.
-		if (fDistance > set_iLocalChatRangeUtl)
+		if (HkDistance3D(vShipLoc, vFromShipLoc) > set_iLocalChatRange)
 			continue;
 
 		// Send the message a player in this system.
@@ -118,7 +115,11 @@ void SendLocalSystemChat(uint iFromClientID, const wstring &wscText)
 /** Send a player to player message */
 void SendPrivateChat(uint iFromClientID, uint iToClientID, const wstring &wscText)
 {
-	wstring wscSender = (const wchar_t*)Players.GetActiveCharacterName(iFromClientID);
+	if (doNotDisturbClients.count(iToClientID))
+	{
+		PrintUserCmdText(iFromClientID, L"User is not receiving private messages");
+		return;
+	}
 
 	if (set_bUserCmdIgnore)
 	{
@@ -128,6 +129,8 @@ void SendPrivateChat(uint iFromClientID, uint iToClientID, const wstring &wscTex
 				return;
 		}
 	}
+
+	wstring wscSender = (const wchar_t*)Players.GetActiveCharacterName(iFromClientID);
 
 	// Send the message to both the sender and receiver.
 	FormatSendChat(iToClientID, wscSender, wscText, L"19BD3A");
@@ -188,9 +191,6 @@ namespace Message
 
 		static const int NUMBER_OF_SLOTS = 10;
 		wstring slot[NUMBER_OF_SLOTS];
-
-		static const int NUMBER_OF_COORDSLOTS = 10;
-		wstring coordslot[NUMBER_OF_COORDSLOTS];
 
 		// Client ID of last PM.
 		uint ulastPmClientID;
@@ -276,11 +276,6 @@ namespace Message
 			mapInfo[iClientID].slot[iMsgSlot] = HookExt::IniGetWS(iClientID, "msg." + itos(iMsgSlot));
 		}
 
-		// Load from disk the messages.
-		for (int iCoordMsgSlot = 0; iCoordMsgSlot < INFO::NUMBER_OF_COORDSLOTS; iCoordMsgSlot++)
-		{
-			mapCoordsInfo[iClientID].coordslot[iCoordMsgSlot] = HookExt::IniGetWS(iClientID, "coordmsg." + itos(iCoordMsgSlot));
-		}
 	}
 
 	/** Show the greeting banner to the specified player */
@@ -353,18 +348,47 @@ namespace Message
 	}
 
 	/** Replace #t and #c tags with current target name and current ship location.
+	Replace #r with all text after the preset invocation.
 	Return false if tags cannot be replaced. */
-	static bool ReplaceMessageTags(uint iClientID, INFO &clientData, wstring &wscMsg)
+	static bool ReplaceMessageTags(uint iClientID, INFO &clientData, const wstring &wscParam, wstring &wscMsg)
 	{
 		if (wscMsg.find(L"#t") != -1)
 		{
-			if (clientData.uTargetClientID == -1)
+			wstring wscTargetName;
+
+			// Get the player's current target SpaceObj
+			uint iPlayerShip, iTargetID;
+			pub::Player::GetShip(iClientID, iPlayerShip);
+			pub::SpaceObj::GetTarget(iPlayerShip, iTargetID);
+
+			// If the player is targeting another player,
+			// use the character name of the targeted ship
+			uint iTargetClientID = HkGetClientIDByShip(iTargetID);
+			if (iTargetClientID)
 			{
-				PrintUserCmdText(iClientID, L"ERR Target not available");
-				return false;
+				wscTargetName = (const wchar_t*)Players.GetActiveCharacterName(clientData.uTargetClientID);
+			}
+			// If the player is targeting some other space object, use the name of
+			// the associated dockable, if possible
+			else
+			{
+				uint iBaseID;
+				pub::SpaceObj::GetDockingTarget(iTargetID, iBaseID);
+				if (iBaseID)
+				{
+					// Player is targeting a dockable space object
+					Universe::IBase* base = Universe::get_base(iBaseID);
+					wscTargetName = HkGetWStringFromIDS(base->iBaseIDS);
+				}
+				else
+				{
+					// Player is targeting a space object without a dockable
+					// (NPC ship, uninhabited planet, storage depot, etc.)
+					PrintUserCmdText(iClientID, L"ERR Invalid target for #t");
+					return false;
+				}
 			}
 
-			wstring wscTargetName = (const wchar_t*)Players.GetActiveCharacterName(clientData.uTargetClientID);
 			wscMsg = ReplaceStr(wscMsg, L"#t", wscTargetName);
 		}
 
@@ -372,6 +396,17 @@ namespace Message
 		{
 			wstring wscCurrLocation = GetLocation(iClientID);
 			wscMsg = ReplaceStr(wscMsg, L"#c", wscCurrLocation.c_str());
+		}
+
+		if (wscMsg.find(L"#r") != -1)
+		{
+			if (wscParam.empty())
+			{
+				PrintUserCmdText(iClientID, L"ERR Missing replacement text");
+				return false;
+			}
+
+			wscMsg = ReplaceStr(wscMsg, L"#r", wscParam);
 		}
 
 		return true;
@@ -473,9 +508,24 @@ namespace Message
 		}
 	}
 
+	void Message::DelayedDisconnect(uint client)
+	{
+		doNotDisturbClients.erase(client);
+		map<uint, INFO>::iterator iter = mapInfo.begin();
+		while (iter != mapInfo.end())
+		{
+			if (iter->second.ulastPmClientID == client)
+				iter->second.ulastPmClientID = -1;
+			if (iter->second.uTargetClientID == client)
+				iter->second.uTargetClientID = -1;
+			++iter;
+		}
+	}
+
 	/// On client disconnect remove any references to this client.
 	void Message::DisConnect(uint iClientID, enum EFLConnection p2)
 	{
+		doNotDisturbClients.erase(iClientID);
 		map<uint, INFO>::iterator iter = mapInfo.begin();
 		while (iter != mapInfo.end())
 		{
@@ -708,82 +758,6 @@ namespace Message
 		return true;
 	}
 
-	/** Set a preset coordinate */
-	bool Message::UserCmd_SaveCoords(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
-	{
-		if (!set_bSetMsg)
-			return false;
-
-		int iCoordMsgSlot = ToInt(GetParam(wscParam, ' ', 0));
-		wstring wscMsg = GetParamToEnd(wscParam, ' ', 1);
-
-		if (iCoordMsgSlot < 0 || iCoordMsgSlot>9 || wscParam.size() == 0)
-		{
-			PrintUserCmdText(iClientID, L"ERR Invalid parameters");
-			PrintUserCmdText(iClientID, usage);
-			return true;
-		}
-
-		HookExt::IniSetWS(iClientID, "coordmsg." + itos(iCoordMsgSlot), wscMsg);
-
-		// Reload the character cache
-		LoadMsgs(iClientID);
-		PrintUserCmdText(iClientID, L"OK");
-		return true;
-	}
-
-	/** Show preset coordinates */
-	bool Message::UserCmd_ShowCoords(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
-	{
-		if (!set_bSetMsg)
-			return false;
-
-		map<uint, INFO>::iterator iter = mapCoordsInfo.find(iClientID);
-		if (iter == mapCoordsInfo.end())
-		{
-			PrintUserCmdText(iClientID, L"ERR No coordinates");
-			return true;
-		}
-
-		for (int i = 0; i < INFO::NUMBER_OF_COORDSLOTS; i++)
-		{
-			PrintUserCmdText(iClientID, L"%d: %s", i, iter->second.coordslot[i].c_str());
-		}
-		PrintUserCmdText(iClientID, L"OK");
-		return true;
-	}
-
-	/** load a preset coordinate */
-	bool Message::UserCmd_LoadCoords(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
-	{
-		if (!set_bSetMsg)
-			return false;
-
-		int iCoordMsgSlot = ToInt(wscCmd.substr(2, 1));
-		if (iCoordMsgSlot < 0 || iCoordMsgSlot>9)
-		{
-			PrintUserCmdText(iClientID, L"ERR Invalid parameters");
-			PrintUserCmdText(iClientID, usage);
-			return true;
-		}
-
-		map<uint, INFO>::iterator iter = mapCoordsInfo.find(iClientID);
-		if (iter == mapCoordsInfo.end())
-		{
-			PrintUserCmdText(iClientID, L"ERR No coordinates");
-			return true;
-		}
-
-		// Replace the tag #t with name of the targeted player.
-		wstring wscMsg = iter->second.coordslot[iCoordMsgSlot];
-		if (!ReplaceMessageTags(iClientID, iter->second, wscMsg))
-			return true;
-
-		HyperJump::UserCmd_SetCoords(iClientID, wscMsg, wscMsg, wscMsg.c_str());
-
-		return true;
-	}
-
 	/** Send a message to system chat. */
 	bool Message::UserCmd_SystemMsg(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
 	{
@@ -825,7 +799,7 @@ namespace Message
 
 		// Replace the tag #t with name of the targeted player.
 		wstring wscMsg = iter->second.slot[iMsgSlot];
-		if (!ReplaceMessageTags(iClientID, iter->second, wscMsg))
+		if (!ReplaceMessageTags(iClientID, iter->second, wscParam, wscMsg))
 			return true;
 
 		SendSystemChat(iClientID, wscMsg);
@@ -857,7 +831,7 @@ namespace Message
 
 		// Replace the tag #t with name of the targeted player.
 		wstring wscMsg = iter->second.slot[iMsgSlot];
-		if (!ReplaceMessageTags(iClientID, iter->second, wscMsg))
+		if (!ReplaceMessageTags(iClientID, iter->second, wscParam, wscMsg))
 			return true;
 
 		SendLocalSystemChat(iClientID, wscMsg);
@@ -907,7 +881,7 @@ namespace Message
 
 		// Replace the tag #t with name of the targeted player.
 		wstring wscMsg = iter->second.slot[iMsgSlot];
-		if (!ReplaceMessageTags(iClientID, iter->second, wscMsg))
+		if (!ReplaceMessageTags(iClientID, iter->second, wscParam, wscMsg))
 			return true;
 
 		SendLocalSystemChat(iClientID, wscMsg);
@@ -957,7 +931,7 @@ namespace Message
 
 		// Replace the tag #t with name of the targeted player.
 		wstring wscMsg = iter->second.slot[iMsgSlot];
-		if (!ReplaceMessageTags(iClientID, iter->second, wscMsg))
+		if (!ReplaceMessageTags(iClientID, iter->second, wscParam, wscMsg))
 			return true;
 
 		SendGroupChat(iClientID, wscMsg);
@@ -995,7 +969,7 @@ namespace Message
 			}
 			// Replace the tag #t with name of the targeted player.
 			wscMsg = iter->second.slot[iMsgSlot];
-			if (!ReplaceMessageTags(iClientID, iter->second, wscMsg))
+			if (!ReplaceMessageTags(iClientID, iter->second, wscParam, wscMsg))
 				return true;
 		}
 		else if (wscMsg.size() == 0)
@@ -1005,7 +979,7 @@ namespace Message
 			return true;
 		}
 
-		if (iter->second.ulastPmClientID == -1)
+		if (iter->second.ulastPmClientID == -1 || !HkIsValidClientID(iter->second.ulastPmClientID))
 		{
 			PrintUserCmdText(iClientID, L"ERR PM sender not available");
 			return true;
@@ -1028,10 +1002,11 @@ namespace Message
 			return true;
 		}
 
-		wstring wscMsg = GetParamToEnd(wscParam, ' ', 0);
+		wstring wscMsg;
 
 		// If this is a /tN command then setup the preset message
-		if (set_bSetMsg && wscCmd.size() == 3 && wscMsg.size() == 0)
+		// looks a little weird to make it O(1)
+		if (set_bSetMsg && ((wscCmd.length() == 3 && wscCmd[2] != ' ') || (wscCmd.length() > 3 && wscCmd[3] == ' ')))
 		{
 			int iMsgSlot = ToInt(wscCmd.substr(2, 1));
 			if (iMsgSlot < 0 || iMsgSlot>9)
@@ -1047,14 +1022,19 @@ namespace Message
 			}
 			// Replace the tag #t with name of the targeted player.
 			wscMsg = iter->second.slot[iMsgSlot];
-			if (!ReplaceMessageTags(iClientID, iter->second, wscMsg))
+			if (!ReplaceMessageTags(iClientID, iter->second, wscParam, wscMsg))
 				return true;
 		}
-		else if (wscMsg.size() == 0)
+		// If this is a /t or /target command then send message text directly
+		else
 		{
-			PrintUserCmdText(iClientID, L"ERR Invalid parameters");
-			PrintUserCmdText(iClientID, usage);
-			return true;
+			wscMsg = GetParamToEnd(wscParam, ' ', 0);
+			if (wscMsg.empty())
+			{
+				PrintUserCmdText(iClientID, L"ERR Invalid parameters");
+				PrintUserCmdText(iClientID, usage);
+				return true;
+			}
 		}
 
 		if (iter->second.uTargetClientID == -1)
@@ -1089,6 +1069,21 @@ namespace Message
 			wscTargetCharname = (const wchar_t*)Players.GetActiveCharacterName(iter->second.uTargetClientID);
 
 		PrintUserCmdText(iClientID, L"OK sender=" + wscSenderCharname + L" target=" + wscTargetCharname);
+		return true;
+	}
+
+	bool Message::UserCmd_SetDoNotDisturb(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage)
+	{
+		if (doNotDisturbClients.count(iClientID))
+		{
+			doNotDisturbClients.erase(iClientID);
+			PrintUserCmdText(iClientID, L"OK Do Not Disturb mode disabled");
+		}
+		else
+		{
+			doNotDisturbClients.insert(iClientID);
+			PrintUserCmdText(iClientID, L"OK Do Not Disturb mode enabled");
+		}
 		return true;
 	}
 
@@ -1480,6 +1475,10 @@ namespace Message
 	/// Drop a percentage of cargo + some loot representing ship bits.
 	void Message::SendDeathMsg(const wstring &wscMsg, uint iSystemID, uint iClientIDVictim, uint iClientIDKiller)
 	{
+		if (!set_bEnableDeathMsg)
+		{
+			return;
+		}
 		// encode xml string(default and small)
 		// non-sys
 		wstring wscXMLMsg = L"<TRA data=\"" + set_wscDeathMsgStyle + L"\" mask=\"-1\"/> <TEXT>";

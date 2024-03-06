@@ -15,6 +15,7 @@
 namespace HkIEngine
 {
 
+	bool bAbortEventRequest;
 	/**************************************************************************************************************
 	// ship create & destroy
 	**************************************************************************************************************/
@@ -86,12 +87,12 @@ namespace HkIEngine
 
 	void __cdecl Update_Time(double dInterval)
 	{
-
-		CALL_PLUGINS_V(PLUGIN_HkCb_Update_Time, , (double), (dInterval));
+		
+		//CALL_PLUGINS_V(PLUGIN_HkCb_Update_Time, , (double), (dInterval));
 
 		Timing::UpdateGlobalTime(dInterval);
 
-		CALL_PLUGINS_V(PLUGIN_HkCb_Update_Time_AFTER, , (double), (dInterval));
+		//CALL_PLUGINS_V(PLUGIN_HkCb_Update_Time_AFTER, , (double), (dInterval));
 	}
 
 	/**************************************************************************************************************
@@ -103,11 +104,11 @@ namespace HkIEngine
 	void __stdcall Elapse_Time(float p1)
 	{
 
-		CALL_PLUGINS_V(PLUGIN_HkCb_Elapse_Time, __stdcall, (float), (p1));
+		//CALL_PLUGINS_V(PLUGIN_HkCb_Elapse_Time, __stdcall, (float), (p1));
 
 		Server.ElapseTime(p1);
 
-		CALL_PLUGINS_V(PLUGIN_HkCb_Elapse_Time_AFTER, __stdcall, (float), (p1));
+		//CALL_PLUGINS_V(PLUGIN_HkCb_Elapse_Time_AFTER, __stdcall, (float), (p1));
 
 		// low serverload missile jitter bugfix
 		uint iCurLoad = GetTickCount() - iLastTicks;
@@ -122,24 +123,43 @@ namespace HkIEngine
 	/**************************************************************************************************************
 	**************************************************************************************************************/
 
-	int __cdecl Dock_Call(unsigned int const &uShipID, unsigned int const &uSpaceID, int p3, enum DOCK_HOST_RESPONSE p4)
+	int __cdecl Dock_Call(unsigned int const &uShipID, unsigned int const &uSpaceID, int iDockPort, enum DOCK_HOST_RESPONSE dockResponse)
 	{
 
-		//	p3 == -1, p4 -> 2 --> Dock Denied!
-		//	p3 == -1, p4 -> 3 --> Dock in Use
-		//	p3 != -1, p4 -> 4 --> Dock ok, proceed (p3 Dock Port?)
-		//	p3 == -1, p4 -> 5 --> now DOCK!
+		//	iDockPort == -1, dockResponse -> 2 --> Dock Denied!
+		//	iDockPort == -1, dockResponse -> 3 --> Dock in Use
+		//	iDockPort != -1, dockResponse -> 4 --> Dock ok, proceed
+		//	iDockPort == -1, dockResponse -> 5 --> now DOCK!
 
-		CALL_PLUGINS(PLUGIN_HkCb_Dock_Call, int, , (unsigned int const &, unsigned int const &, int, DOCK_HOST_RESPONSE), (uShipID, uSpaceID, p3, p4));
+		DOCK_HOST_RESPONSE prePluginResponse = dockResponse;
+		int prePluginDockPort = iDockPort;
 
-		try {
-			return pub::SpaceObj::Dock(uShipID, uSpaceID, p3, p4);
+		int returnValue;
+
+		CALL_PLUGINS(PLUGIN_HkCb_Dock_Call, int, , (unsigned int const &, unsigned int const &, int&, DOCK_HOST_RESPONSE&), (uShipID, uSpaceID, iDockPort, dockResponse));
+
+		LOG_CORE_TIMER_START
+		TRY_HOOK {
+			returnValue = pub::SpaceObj::Dock(uShipID, uSpaceID, iDockPort, dockResponse);
+		} CATCH_HOOK({})
+		LOG_CORE_TIMER_END
+
+		CALL_PLUGINS(PLUGIN_HkCb_Dock_Call_AFTER, int, , (unsigned int const &, unsigned int const &, int&, DOCK_HOST_RESPONSE&), (uShipID, uSpaceID, iDockPort, dockResponse));
+
+		//if original response was positive and new response is negative, set the dock event for immediate cancellation
+		//also ACCESS_DENIED response doesn't automatically trigger the appropriate voice line
+		if (prePluginDockPort != -1 && iDockPort == -1 &&
+			(uint)prePluginResponse >= 3 && (uint)dockResponse < 3)
+		{
+			bAbortEventRequest = true;
+			if (dockResponse == ACCESS_DENIED)
+			{
+				uint client = HkGetClientIDByShip(uShipID);
+				pub::Player::SendNNMessage(client, pub::GetNicknameId("info_access_denied"));
+			}
 		}
-		catch (...) { LOG_EXCEPTION }
 
-		CALL_PLUGINS(PLUGIN_HkCb_Dock_Call_AFTER, int, , (unsigned int const &, unsigned int const &, int, DOCK_HOST_RESPONSE), (uShipID, uSpaceID, p3, p4));
-
-		return 0;
+		return returnValue;
 	}
 
 

@@ -217,7 +217,7 @@ HK_ERROR HkBeam(const wstring &wscCharname, const wstring &wscBasename)
 				if (wcsstr(buf, wscBasename.c_str()))
 				{
 					// Ignore the intro bases.
-					if (_strnicmp("intro", (char*)pBase->iDunno2, 5) != 0)
+					if (_strnicmp("intro", pBase->cNickname, 5) != 0)
 					{
 						iBaseID = pBase->iBaseID;
 						break;
@@ -253,6 +253,27 @@ HK_ERROR HkBeam(const wstring &wscCharname, const wstring &wscBasename)
 	return HKE_OK;
 }
 
+HK_ERROR HkBeamById(const uint clientId, const uint baseId)
+{
+	uint systemId;
+	pub::Player::GetSystem(clientId, systemId);
+	Universe::IBase* baseInfo = Universe::get_base(baseId);
+	pub::Player::ForceLand(clientId, baseId);
+	if (systemId != baseInfo->iSystemID)
+	{
+		auto charName = (const wchar_t*)Players.GetActiveCharacterName(clientId);
+		Server.BaseEnter(baseInfo->iBaseID, clientId);
+		Server.BaseExit(baseInfo->iBaseID, clientId);
+		wstring wscCharFileName;
+		HkGetCharFileName(charName, wscCharFileName);
+		wscCharFileName += L".fl";
+		CHARACTER_ID cID;
+		strcpy(cID.szCharFilename, wstos(wscCharFileName.substr(0, 14)).c_str());
+		Server.CharacterSelect(cID, clientId);
+	}
+	return HKE_OK;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 HK_ERROR HkSaveChar(const wstring &wscCharname)
@@ -262,12 +283,7 @@ HK_ERROR HkSaveChar(const wstring &wscCharname)
 	if (iClientID == -1)
 		return HKE_PLAYER_NOT_LOGGED_IN;
 
-	void *pJmp = (char*)hModServer + 0x7EFA8;
-	char szNop[2] = { '\x90', '\x90' };
-	char szTestAlAl[2] = { '\x74', '\x44' };
-	WriteProcMem(pJmp, szNop, sizeof(szNop)); // nop the SinglePlayer() check
 	pub::Save(iClientID, 1);
-	WriteProcMem(pJmp, szTestAlAl, sizeof(szTestAlAl)); // restore
 
 	return HKE_OK;
 }
@@ -658,6 +674,8 @@ HK_ERROR HkKill(const wstring &wscCharname)
 	if (!iShip)
 		return HKE_PLAYER_NOT_IN_SPACE;
 
+	ClientInfo[iClientID].dmgLastPlayerId = 0;
+	ClientInfo[iClientID].dmgLastCause = DamageCause::Admin;
 	pub::SpaceObj::SetRelativeHealth(iShip, 0.0f);
 	return HKE_OK;
 }

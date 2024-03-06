@@ -14,6 +14,7 @@
 #include <list>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <random>
 
@@ -42,6 +43,8 @@ struct stBountyBasePayout {
 struct stDropInfo {
 	uint uGoodID;
 	float fChance;
+	uint uAmountDroppedMin;
+	uint uAmountDroppedMax;
 };
 
 struct stWarzone {
@@ -58,7 +61,10 @@ unordered_map<uint, float> mapBountyArmorScales;
 unordered_map<uint, float> mapBountySystemScales;
 multimap<uint, stWarzone> mmapBountyWarzoneScales;
 
+unordered_set<uint> setBountyAwardedShips;
+
 multimap<uint, stDropInfo> mmapDropInfo;
+unordered_set<uint> mapDropExcludedArchetypes;
 unordered_map<uint, uint> mapShipClassTypes;
 map<int, float> mapClassDiffMultipliers;
 
@@ -86,6 +92,7 @@ void LoadSettingsNPCDrops(void);
 /// Clear client info when a client connects.
 void ClearClientInfo(uint iClientID)
 {
+	returncode = DEFAULT_RETURNCODE;
 	aClientData[iClientID] = { 0 };
 }
 
@@ -283,10 +290,27 @@ void LoadSettingsNPCDrops()
 						string szGood = ini.get_value_string(1);
 						drop.uGoodID = CreateID(szGood.c_str());
 						drop.fChance = ini.get_value_float(2);
+						drop.uAmountDroppedMin = ini.get_value_int(3);
+						drop.uAmountDroppedMax = ini.get_value_int(4);
+						if (drop.uAmountDroppedMin == 0)
+						{
+							drop.uAmountDroppedMin = 1;
+						}
+						drop.uAmountDroppedMax = ini.get_value_int(4);
 						mmapDropInfo.insert(make_pair(iClass, drop));
 						++iLoadedNPCDropClasses;
 						if (set_iPluginDebug)
 							ConPrint(L"PVECONTROLLER: Loaded class %u drop %s (0x%08X), %f chance.\n", iClass, stows(szGood).c_str(), CreateID(szGood.c_str()), drop.fChance);
+					}
+				}
+			}
+			if (ini.is_header("NPCDropsExclusions"))
+			{
+				while (ini.read_value())
+				{
+					if (ini.is_value("excludedShipArch"))
+					{
+						mapDropExcludedArchetypes.insert(CreateID(ini.get_value_string(0)));
 					}
 				}
 			}
@@ -353,7 +377,12 @@ void NPCBountyPayout(uint iClientID) {
 	}
 
 	HkAddCash((const wchar_t*)Players.GetActiveCharacterName(iClientID), aClientData[iClientID].bounty_pool);
-	PrintUserCmdText(iClientID, L"A bounty pool worth $%s credits for %d kill%s has been deposited in your account.", ToMoneyStr(aClientData[iClientID].bounty_pool).c_str(), aClientData[iClientID].bounty_count, (aClientData[iClientID].bounty_count == 1 ? L"" : L"s"));
+	if (set_iPoolPayoutTimer) {
+		PrintUserCmdText(iClientID, L"A bounty pool worth $%s credits for %d kill%s has been deposited into your account.", ToMoneyStr(aClientData[iClientID].bounty_pool).c_str(), aClientData[iClientID].bounty_count, (aClientData[iClientID].bounty_count == 1 ? L"" : L"s"));
+	}
+	else {
+		PrintUserCmdText(iClientID, L"A bounty of $%s credits has been deposited into your account.", ToMoneyStr(aClientData[iClientID].bounty_pool).c_str());
+	}
 
 	aClientData[iClientID].bounty_count = 0;
 	aClientData[iClientID].bounty_pool = 0;
@@ -384,7 +413,7 @@ bool UserCmd_Value(uint iClientID, const wstring &wscCmd, const wstring &wscPara
 {
 	float fShipValue = 0;
 	HKGetShipValue((const wchar_t*)Players.GetActiveCharacterName(iClientID), fShipValue);
-	PrintUserCmdText(iClientID, L"Ship value: $%s credits.", ToMoneyStr(fShipValue).c_str());
+	PrintUserCmdText(iClientID, L"Ship value: $%s credits.", ToMoneyStr(static_cast<int>(fShipValue)).c_str());
 
 	return true;
 }
@@ -538,23 +567,24 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring &wscCmd)
 //Functions to hook
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
+void __stdcall HkCb_ShipDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 {
 	returncode = DEFAULT_RETURNCODE;
 
-	if (!iKill)
+	CShip* cship = (CShip*)iobj->cobj;
+	if (cship->ownerPlayer)
 		return;
-	CShip* cship = (CShip*)ecx[4];
-	if (cship->GetOwnerPlayer())
-		return;
-	uint iVictimShipId = cship->iSpaceID;
+	uint iVictimShipId = cship->id;
 
-	uint iKillerClientId = HkGetClientIDByShip(reinterpret_cast<uint*>(dmg)[2]); // whatever the first parameter is, it's NOT a DamageList*, but third element is the killer's spaceObjId
+	uint iKillerClientId = HkGetClientIDByShip(killerId);
 
 	if (!iVictimShipId || !iKillerClientId)
 		return;
 
 	if (HkGetClientIDByShip(iVictimShipId))
+		return;
+
+	if (setBountyAwardedShips.count(iVictimShipId))
 		return;
 
 	uint iTargetType;
@@ -563,8 +593,6 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 	unsigned int uArchID = 0;
 	pub::SpaceObj::GetSolarArchetypeID(iVictimShipId, uArchID);
 	Archetype::Ship* victimShiparch = Archetype::GetShip(uArchID);
-	if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-		PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: You killed an NPC uArchID == %u", uArchID);
 
 	// Grab some info we'll need later.
 	uint uKillerSystem = 0;
@@ -577,31 +605,28 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 	float fAttitude = 0.0f;
 	pub::SpaceObj::GetRep(iVictimShipId, iTargetRep);
 	Reputation::Vibe::GetAffiliation(iTargetRep, uTargetAffiliation, false);
-	pub::SpaceObj::GetRep(dmg->get_inflictor_id(), iPlayerRep);
-	Reputation::Vibe::Verify(iPlayerRep);
+	pub::Player::GetRep(iKillerClientId, iPlayerRep);
 	Reputation::Vibe::GetAffiliation(iPlayerRep, uKillerAffiliation, false);
 	pub::Reputation::GetGroupFeelingsTowards(iPlayerRep, uTargetAffiliation, fAttitude);
 	if (fAttitude > set_fMaximumRewardRep) {
-		if (set_bBountiesEnabled)
-			PrintUserCmdText(iKillerClientId, L"Can not pay bounty against ineligible combatant (reputation towards target must be %0.2f or lower).", set_fMaximumRewardRep);
 		return;
 	}
 
+	setBountyAwardedShips.insert(iVictimShipId);
+
 	// Process bounties if enabled.
 	if (set_bBountiesEnabled) {
-		int iBountyPayout = 0;
+		float fBountyPayout = 0;
 
 		// Determine bounty payout.
 		const auto& iter = mapBountyShipPayouts.find(uArchID);
 		if (iter != mapBountyShipPayouts.end()) {
-			if (set_iPluginDebug >= PLUGIN_DEBUG_VERBOSE)
-				PrintUserCmdText(iKillerClientId, L"Overriding payout for uarch %u to be $%d.", uArchID, iter->second.iBasePayout);
-			iBountyPayout = iter->second.iBasePayout;
+			fBountyPayout = static_cast<float>(iter->second.iBasePayout);
 		}
 		else {
 			const auto& iter = mapBountyPayouts.find(victimShiparch->iShipClass);
 			if (iter != mapBountyPayouts.end()) {
-				iBountyPayout = iter->second.iBasePayout;
+				fBountyPayout = static_cast<float>(iter->second.iBasePayout);
 				if (victimShiparch->iShipClass < 5) {
 					unsigned int iDunno = 0;
 					IObjInspectImpl* obj = NULL;
@@ -615,7 +640,7 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 							if (cearmor) {
 								const auto& iter = mapBountyArmorScales.find(cearmor->archetype->iArchID);
 								if (iter != mapBountyArmorScales.end())
-									iBountyPayout = (int)((float)iBountyPayout * iter->second);
+									fBountyPayout *= iter->second;
 							}
 						}
 					}
@@ -628,9 +653,7 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 			if (iter != mmapBountyWarzoneScales.end())
 			{
 				if ((iter->second.uFaction1 == uKillerAffiliation && iter->second.uFaction2 == uTargetAffiliation) || (iter->second.uFaction2 == uKillerAffiliation && iter->second.uFaction1 == uTargetAffiliation)) {
-					if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-						PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: Killer (%u) and Target (%u) have valid warzone multipliyer of %0.2f", uKillerAffiliation, uTargetAffiliation, iter->second.fMultiplier);
-					iBountyPayout *= iter->second.fMultiplier;
+					fBountyPayout *= iter->second.fMultiplier;
 				}
 			}
 		}
@@ -639,7 +662,7 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 		if (iLoadedNPCBountySystemScales) {
 			const auto& itSystemScale = mapBountySystemScales.find(uKillerSystem);
 			if (itSystemScale != mapBountySystemScales.end())
-				iBountyPayout *= itSystemScale->second;
+				fBountyPayout *= itSystemScale->second;
 		}
 
 		// Multiply by class diff multiplier if applicable.
@@ -654,21 +677,16 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 
 			const auto& itDiffMultiplier = mapClassDiffMultipliers.lower_bound(classDiff);
 			if (itDiffMultiplier != mapClassDiffMultipliers.end())
-				iBountyPayout *= itDiffMultiplier->second;
-			if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-				PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: Modifying payout to $%d (%0.2f x normal) due to class difference. %u vs %u \n", iBountyPayout, itDiffMultiplier->second, itKillerType->second, itVictimType->second);
+				fBountyPayout *= itDiffMultiplier->second;
 		}
 
 		// If we've turned bounties off, don't pay it.
 		if (!set_bBountiesEnabled)
-			iBountyPayout = 0;
+			fBountyPayout = 0;
 
-		if (iBountyPayout) {
+		if (fBountyPayout) {
 			list<GROUP_MEMBER> lstMembers;
 			HkGetGroupMembers((const wchar_t*)Players.GetActiveCharacterName(iKillerClientId), lstMembers);
-
-			if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-				PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: There are %u players in your group.", lstMembers.size());
 
 			foreach(lstMembers, GROUP_MEMBER, gm) {
 				uint uGroupMemberSystem = 0;
@@ -678,15 +696,12 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 			}
 
 			if (mapBountyGroupScale.count(lstMembers.size()))
-				iBountyPayout = (int)((float)iBountyPayout * mapBountyGroupScale[lstMembers.size()]);
+				fBountyPayout *= mapBountyGroupScale[lstMembers.size()];
 			else
-				iBountyPayout = (int)((float)iBountyPayout / lstMembers.size());
-
-			if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-				PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: Paying out $%d to %u eligible group members in your system.", iBountyPayout, lstMembers.size());
+				fBountyPayout /= static_cast<float>(lstMembers.size());
 
 			foreach(lstMembers, GROUP_MEMBER, gm) {
-				NPCBountyAddToPool(gm->iClientID, iBountyPayout, set_iPoolPayoutTimer);
+				NPCBountyAddToPool(gm->iClientID, static_cast<int>(fBountyPayout), set_iPoolPayoutTimer);
 				if (!set_iPoolPayoutTimer)
 					NPCBountyPayout(gm->iClientID);
 			}
@@ -695,27 +710,40 @@ void __stdcall HkCb_ShipDestroyed(DamageList* dmg, DWORD* ecx, uint iKill)
 	}
 
 	// Process drops if enabled.
-	if (set_bDropsEnabled) {
-		const auto& iter = mmapDropInfo.find(victimShiparch->iShipClass);
-		if (iter != mmapDropInfo.end())
-		{
-			if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-				PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: class %d drop entry found, %f chance to drop 0x%08X.\n", iter->first, iter->second.fChance, iter->second.uGoodID);
-			float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-			if (roll < iter->second.fChance) {
-				if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-					PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: Rolled %f, won a drop!\n", roll);
+	if (!set_bDropsEnabled || mapDropExcludedArchetypes.count(uArchID))
+	{
+		return;
+	}
 
-				Vector vLoc = { 0.0f, 0.0f, 0.0f };
-				Matrix mRot = { 0.0f, 0.0f, 0.0f };
-				pub::SpaceObj::GetLocation(iVictimShipId, vLoc, mRot);
-				vLoc.x += 30.0;
-				Server.MineAsteroid(uKillerSystem, vLoc, set_uLootCrateID, iter->second.uGoodID, 1, iKillerClientId);
+	auto& iter = mmapDropInfo.lower_bound(victimShiparch->iShipClass);
+	if (iter == mmapDropInfo.end())
+	{
+		return;
+	}
+	
+	const auto& iterEnd = mmapDropInfo.upper_bound(victimShiparch->iShipClass);
+	while (iter != iterEnd)
+	{
+		const auto& dropData = iter->second;
+		float roll = static_cast<float>(rand()) / RAND_MAX;
+		if (roll < dropData.fChance)
+		{
+			Vector vLoc;
+			Matrix mRot;
+			pub::SpaceObj::GetLocation(iVictimShipId, vLoc, mRot);
+			vLoc.x += 30.0;
+			uint finalAmount;
+			if (dropData.uAmountDroppedMax)
+			{
+				finalAmount = dropData.uAmountDroppedMin + (rand() % (dropData.uAmountDroppedMax - dropData.uAmountDroppedMin + 1));
 			}
 			else
-				if (set_iPluginDebug >= PLUGIN_DEBUG_VERYVERBOSE)
-					PrintUserCmdText(iKillerClientId, L"PVECONTROLLER: Rolled %f, no drop for you.\n", roll);
+			{
+				finalAmount = dropData.uAmountDroppedMin;
+			}
+			Server.MineAsteroid(uKillerSystem, vLoc, set_uLootCrateID, dropData.uGoodID, finalAmount, iKillerClientId);
 		}
+		iter++;
 	}
 }
 
@@ -732,6 +760,10 @@ void HkTimerCheckKick()
 					NPCBountyPayout(i);
 			}
 		}
+	}
+	if (curr_time % 1800 == 0)
+	{
+		setBountyAwardedShips.clear();
 	}
 }
 

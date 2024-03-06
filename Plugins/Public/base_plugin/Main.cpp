@@ -8,64 +8,94 @@
 
 // includes 
 
-#include <windows.h>
-#include <stdio.h>
-#include <string>
-#include <time.h>
-#include <math.h>
-#include <list>
-#include <map>
-#include <algorithm>
 #include <FLHook.h>
 #include <plugin.h>
 #include <PluginUtilities.h>
 #include "Main.h"
 #include <sstream>
 #include <hookext_exports.h>
-#include <unordered_map>
 
 // Clients
-map<uint, CLIENT_DATA> clients;
+unordered_map<uint, CLIENT_DATA> clients;
 
 // Bases
-map<uint, PlayerBase*> player_bases;
-map<uint, PlayerBase*>::iterator baseSaveIterator = player_bases.begin();
-
-map<uint, bool> mapPOBShipPurchases;
+unordered_map<uint, PlayerBase*> player_bases;
+unordered_map<uint, PlayerBase*>::iterator baseSaveIterator = player_bases.begin();
 
 /// 0 = HTML, 1 = JSON, 2 = Both
 int ExportType = 0;
 
 /// The debug mode
 int set_plugin_debug = 0;
+int set_plugin_debug_special = 0;
+
+/// List of banned systems
+unordered_set<uint> bannedSystemList;
 
 /// The ship used to construct and upgrade bases
 uint set_construction_shiparch = 0;
 
+/// Mininmum distances for base deployment
+bool enableDistanceCheck = false;
+float minMiningDistance = 30000;
+float minPlanetDistance = 2500;
+float minStationDistance = 10000;
+float minLaneDistance = 5000;
+float minJumpDistance = 15000;
+float minDistanceMisc = 2500;
+float minOtherPOBDistance = 5000;
+
+unordered_set<uint> lowTierMiningCommoditiesSet;
+
+/// Deployment command cooldown trackimg
+unordered_map<uint, uint> deploymentCooldownMap;
+uint deploymentCooldownDuration = 60;
+
 /// Map of good to quantity for items required by construction ship
 map<uint, uint> construction_items;
 
+/// Construction cost in credits
+int construction_credit_cost = 0;
+
 /// list of items and quantity used to repair 10000 units of damage
-list<REPAIR_ITEM> set_base_repair_items;
+vector<REPAIR_ITEM> set_base_repair_items;
 
 /// list of items used by human crew
-map<uint, uint> set_base_crew_consumption_items;
-map<uint, uint> set_base_crew_food_items;
+vector<uint> set_base_crew_consumption_items;
+vector<uint> set_base_crew_food_items;
+
+uint set_crew_check_frequency = 60 * 60 * 12; // 12 hours
 
 /// The commodity used as crew for the base
 uint set_base_crew_type;
 
+unordered_set<uint> humanCargoList;
+
 /// A return code to indicate to FLHook if we want the hook processing to continue.
 PLUGIN_RETURNCODE returncode;
 
-/// Map of item nickname hash to recipes to construct item.
-map<uint, RECIPE> recipes;
+/// Global recipe map
+unordered_map<uint, RECIPE> recipeMap;
 
-/// Map of item nickname hash to recipes to operate shield.
-map<uint, uint> shield_power_items;
+/// Maps of shortcut numbers to recipes to construct item.
+unordered_map<wstring, map<uint, RECIPE>> recipeCraftTypeNumberMap;
+unordered_map<wstring, map<wstring, RECIPE>> recipeCraftTypeNameMap;
+unordered_map<uint, vector<wstring>> factoryNicknameToCraftTypeMap;
+unordered_map<wstring, RECIPE> moduleNameRecipeMap;
+unordered_map<wstring, map<uint, RECIPE>> craftListNumberModuleMap;
+unordered_set<wstring> buildingCraftLists;
+
+void AddFactoryRecipeToMaps(const RECIPE& recipe);
+void AddModuleRecipeToMaps(const RECIPE& recipe, const vector<wstring> craft_types, const wstring& build_type, uint recipe_number);
 
 /// Map of space obj IDs to base modules to speed up damage algorithms.
 unordered_map<uint, Module*> spaceobj_modules;
+
+/// Map of core upgrade recipes
+unordered_map<uint, uint> core_upgrade_recipes;
+
+/// Map of core level to default storage capacity:
+unordered_map<uint, uint> core_upgrade_storage;
 
 /// Path to shield status html page
 string set_status_path_html;
@@ -74,11 +104,7 @@ string set_status_path_html;
 string set_status_path_json;
 
 /// Damage to the base every tick
-uint set_damage_per_tick = 600;
-
-/// Damage multiplier for damaged/abandoned stations
-/// In case of overlapping modifiers, only the first one specified in .cfg file will apply
-list<WEAR_N_TEAR_MODIFIER> wear_n_tear_mod_list;
+float set_damage_per_tick = 600;
 
 /// Additional damage penalty for stations without proper crew
 float no_crew_damage_multiplier = 1;
@@ -97,17 +123,22 @@ uint repair_per_repair_cycle = 60000;
 // POB starts at base_shield_strength, then every 'threshold' of damage taken, 
 // shield goes up in absorption by the 'increment'
 // threshold size is to be configured per core level.
-map<int, float> shield_reinforcement_threshold_map;
+unordered_map<int, float> shield_reinforcement_threshold_map;
 float shield_reinforcement_increment = 0.0f;
 float base_shield_strength = 0.97f;
 
-// decides if bases are globally immune, based on server time
-bool isGlobalBaseInvulnerabilityActive;
+int vulnerability_window_length = 120; // 2 hours
 
-list<BASE_VULNERABILITY_WINDOW> baseVulnerabilityWindows;
+int vulnerability_window_change_cooldown = 3600 * 24 * 30; // 30 days
+
+int vulnerability_window_minimal_spread = 60 * 8; // 8 hours
+
+bool single_vulnerability_window = false;
+
+const uint shield_fuse = CreateID("player_base_shield");
 
 /// List of commodities forbidden to store on POBs
-set<uint> forbidden_player_base_commodity_set;
+unordered_set<uint> forbidden_player_base_commodity_set;
 
 // If true, use the new solar based defense platform spawn 	 	
 bool set_new_spawn = true;
@@ -122,7 +153,7 @@ bool set_holiday_mode = false;
 POBSOUNDS pbsounds;
 
 //archtype structure
-map<string, ARCHTYPE_STRUCT> mapArchs;
+unordered_map<string, ARCHTYPE_STRUCT> mapArchs;
 
 //commodities to watch for logging
 map<uint, wstring> listCommodities;
@@ -135,6 +166,11 @@ float siege_mode_damage_trigger_level = 8000000;
 
 //the distance between bases to share siege mod activation
 float siege_mode_chain_reaction_trigger_distance = 8000;
+
+unordered_set<uint> customSolarList;
+
+//siege weaponry definitions
+unordered_map<uint, float> siegeWeaponryMap;
 
 uint GetAffliationFromClient(uint client)
 {
@@ -151,24 +187,29 @@ uint GetAffliationFromClient(uint client)
 
 PlayerBase *GetPlayerBase(uint base)
 {
-	map<uint, PlayerBase*>::iterator i = player_bases.find(base);
+	const auto& i = player_bases.find(base);
 	if (i != player_bases.end())
+	{
 		return i->second;
-	return 0;
+	}
+	return nullptr;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 PlayerBase *GetPlayerBaseForClient(uint client)
 {
-	map<uint, CLIENT_DATA>::iterator j = clients.find(client);
+	auto& j = clients.find(client);
 	if (j == clients.end())
-		return 0;
+	{
+		return nullptr;
+	}
 
-	map<uint, PlayerBase*>::iterator i = player_bases.find(j->second.player_base);
+	auto i = player_bases.find(j->second.player_base);
 	if (i == player_bases.end())
-		return 0;
-
+	{
+		return nullptr;
+	}
 	return i->second;
 }
 
@@ -176,14 +217,16 @@ PlayerBase *GetPlayerBaseForClient(uint client)
 
 PlayerBase *GetLastPlayerBaseForClient(uint client)
 {
-	map<uint, CLIENT_DATA>::iterator j = clients.find(client);
+	auto& j = clients.find(client);
 	if (j == clients.end())
-		return 0;
-
-	map<uint, PlayerBase*>::iterator i = player_bases.find(j->second.last_player_base);
+	{
+		return nullptr;
+	}
+	auto& i = player_bases.find(j->second.last_player_base);
 	if (i == player_bases.end())
-		return 0;
-
+	{
+		return nullptr;
+	}
 	return i->second;
 }
 
@@ -229,6 +272,17 @@ void BaseLogging(const char *szString, ...)
 		fflush(BaseLogfile);
 		fclose(BaseLogfile);
 	}
+}
+
+void RespawnBase(PlayerBase* base)
+{
+	string filepath = base->path;
+	player_bases.erase(base->base);
+	delete base;
+	base = nullptr;
+	PlayerBase* newBase = new PlayerBase(filepath);
+	player_bases[newBase->base] = newBase;
+	newBase->Spawn();
 }
 
 FILE *LogfileEventCommodities = fopen("./flhook_logs/event_pobsales.log", "at");
@@ -312,20 +366,18 @@ void SyncReputationForClientShip(uint ship, uint client)
 	uint system;
 	pub::SpaceObj::GetSystem(ship, system);
 
-	map<uint, PlayerBase*>::iterator base = player_bases.begin();
-	for (; base != player_bases.end(); base++)
+	for (auto& base : player_bases)
 	{
-		if (base->second->system == system)
+		if (base.second->system == system)
 		{
-			float attitude = base->second->GetAttitudeTowardsClient(client);
+			float attitude = base.second->GetAttitudeTowardsClient(client);
 			if (set_plugin_debug > 1)
-				ConPrint(L"SyncReputationForClientShip:: ship=%u attitude=%f base=%08x\n", ship, attitude, base->first);
-			for (vector<Module*>::iterator module = base->second->modules.begin();
-				module != base->second->modules.end(); ++module)
+				ConPrint(L"SyncReputationForClientShip:: ship=%u attitude=%f base=%08x\n", ship, attitude, base.first);
+			for (auto module : base.second->modules)
 			{
-				if (*module)
+				if (module)
 				{
-					(*module)->SetReputation(player_rep, attitude);
+					module->SetReputation(player_rep, attitude);
 				}
 			}
 		}
@@ -377,10 +429,16 @@ wstring HtmlEncode(wstring text)
 /// Clear client info when a client connects.
 void ClearClientInfo(uint client)
 {
+	returncode = DEFAULT_RETURNCODE;
 	clients.erase(client);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void Shutdown()
+{
+	HyperJump::KillAllUnchartedOnShutdown();
+}
 
 void LoadSettings()
 {
@@ -390,34 +448,51 @@ void LoadSettings()
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+void ValidateItem(const char* goodName)
+{
+	const GoodInfo* gi = GoodList_get()->find_by_name(goodName);
+	if (!gi)
+	{
+		ConPrint(L"\n\nBASE ERROR Invalid good found in config: %ls\n\n", stows((string)goodName).c_str());
+	}
+}
+
 /// Load the configuration
 void LoadSettingsActual()
 {
 	returncode = DEFAULT_RETURNCODE;
 
+	EquipmentUtilities::ReadIniNicknames();
+
 	// The path to the configuration file.
 	char szCurDir[MAX_PATH];
 	GetCurrentDirectory(sizeof(szCurDir), szCurDir);
-	string cfg_file = string(szCurDir) + "\\flhook_plugins\\base.cfg";
-	string cfg_fileitems = string(szCurDir) + "\\flhook_plugins\\base_recipe_items.cfg";
-	string cfg_filemodules = string(szCurDir) + "\\flhook_plugins\\base_recipe_modules.cfg";
-	string cfg_filearch = string(szCurDir) + "\\flhook_plugins\\base_archtypes.cfg";
-	string cfg_fileforbiddencommodities = string(szCurDir) + "\\flhook_plugins\\base_forbidden_cargo.cfg";
+	string cfg_file = string(szCurDir) + R"(\flhook_plugins\base.cfg)";
+	string cfg_fileitems = string(szCurDir) + R"(\flhook_plugins\base_recipe_items.cfg)";
+	string cfg_filemodules = string(szCurDir) + R"(\flhook_plugins\base_recipe_modules.cfg)";
+	string cfg_filearch = string(szCurDir) + R"(\flhook_plugins\base_archtypes.cfg)";
+	string cfg_fileforbiddencommodities = string(szCurDir) + R"(\flhook_plugins\base_forbidden_cargo.cfg)";
+	uint bmapLoadHyperspaceHubConfig = 0;
 
-	map<uint, PlayerBase*>::iterator base = player_bases.begin();
-	for (; base != player_bases.end(); base++)
+	for (auto base : player_bases)
 	{
-		delete base->second;
+		delete base.second;
 	}
 
-	recipes.clear();
+	player_bases.clear();
 	construction_items.clear();
 	set_base_repair_items.clear();
 	set_base_crew_consumption_items.clear();
 	set_base_crew_food_items.clear();
-	shield_power_items.clear();
+	recipeCraftTypeNumberMap.clear();
+	recipeCraftTypeNameMap.clear();
+	factoryNicknameToCraftTypeMap.clear();
+	moduleNameRecipeMap.clear();
+	craftListNumberModuleMap.clear();
+	humanCargoList.clear();
 
 	HookExt::ClearMiningObjData();
+	DefenseModule::LoadSettings(string(szCurDir) + R"(\flhook_plugins\base_wp_ai.cfg)");
 
 	INI_Reader ini;
 	if (ini.open(cfg_file.c_str(), false))
@@ -458,15 +533,7 @@ void LoadSettingsActual()
 					}
 					else if (ini.is_value("damage_per_tick"))
 					{
-						set_damage_per_tick = ini.get_value_int(0);
-					}
-					else if (ini.is_value("damage_multiplier"))
-					{
-						WEAR_N_TEAR_MODIFIER mod;
-						mod.fromHP = ini.get_value_float(0);
-						mod.toHP = ini.get_value_float(1);
-						mod.modifier = ini.get_value_float(2);
-						wear_n_tear_mod_list.push_back(mod);
+						set_damage_per_tick = ini.get_value_float(0);
 					}
 					else if (ini.is_value("no_crew_damage_multiplier"))
 					{
@@ -496,12 +563,13 @@ void LoadSettingsActual()
 					{
 						base_shield_strength = ini.get_value_float(0);
 					}
-					else if (ini.is_value("base_vulnerability_window"))
+					else if (ini.is_value("base_vulnerability_window_length"))
 					{
-						BASE_VULNERABILITY_WINDOW damageWindow;
-						damageWindow.start = ini.get_value_int(0);
-						damageWindow.end = ini.get_value_int(1);
-						baseVulnerabilityWindows.push_back(damageWindow);
+						vulnerability_window_length = ini.get_value_int(0);
+					}
+					else if (ini.is_value("single_vulnerability_window"))
+					{
+						single_vulnerability_window = ini.get_value_bool(0);
 					}
 					else if (ini.is_value("construction_shiparch"))
 					{
@@ -509,38 +577,49 @@ void LoadSettingsActual()
 					}
 					else if (ini.is_value("construction_item"))
 					{
+						ValidateItem(ini.get_value_string(0));
 						uint good = CreateID(ini.get_value_string(0));
 						uint quantity = ini.get_value_int(1);
 						construction_items[good] = quantity;
 					}
+					else if (ini.is_value("construction_credit_cost"))
+					{
+						construction_credit_cost = ini.get_value_int(0);
+					}
 					else if (ini.is_value("base_crew_item"))
 					{
+						ValidateItem(ini.get_value_string(0));
 						set_base_crew_type = CreateID(ini.get_value_string(0));
+						humanCargoList.insert(set_base_crew_type);
+					}
+					else if (ini.is_value("human_cargo_item"))
+					{
+						ValidateItem(ini.get_value_string(0));
+						humanCargoList.insert(CreateID(ini.get_value_string(0)));
 					}
 					else if (ini.is_value("base_repair_item"))
 					{
+						ValidateItem(ini.get_value_string(0));
 						REPAIR_ITEM item;
 						item.good = CreateID(ini.get_value_string(0));
 						item.quantity = ini.get_value_int(1);
-						set_base_repair_items.push_back(item);
+						set_base_repair_items.emplace_back(item);
 					}
 					else if (ini.is_value("base_crew_consumption_item"))
 					{
+						ValidateItem(ini.get_value_string(0));
 						uint good = CreateID(ini.get_value_string(0));
-						uint quantity = ini.get_value_int(1);
-						set_base_crew_consumption_items[good] = quantity;
+						set_base_crew_consumption_items.emplace_back(good);
 					}
 					else if (ini.is_value("base_crew_food_item"))
 					{
+						ValidateItem(ini.get_value_string(0));
 						uint good = CreateID(ini.get_value_string(0));
-						uint quantity = ini.get_value_int(1);
-						set_base_crew_food_items[good] = quantity;
+						set_base_crew_food_items.emplace_back(good);
 					}
-					else if (ini.is_value("shield_power_item"))
+					else if (ini.is_value("set_crew_check_frequency"))
 					{
-						uint good = CreateID(ini.get_value_string(0));
-						uint quantity = ini.get_value_int(1);
-						shield_power_items[good] = quantity;
+						set_crew_check_frequency = ini.get_value_int(0);
 					}
 					else if (ini.is_value("set_new_spawn"))
 					{
@@ -560,7 +639,152 @@ void LoadSettingsActual()
 						listCommodities[c] = stows(ini.get_value_string());
 
 					}
+					else if (ini.is_value("min_mining_distance"))
+					{
+						minMiningDistance = max(0.0f, ini.get_value_float(0));
+					}
+					else if (ini.is_value("min_planet_distance"))
+					{
+						minPlanetDistance = max(0.0f, ini.get_value_float(0));
+					}
+					else if (ini.is_value("min_station_distance"))
+					{
+						minStationDistance = max(0.0f, ini.get_value_float(0));
+					}
+					else if (ini.is_value("min_trade_lane_distance"))
+					{
+						minLaneDistance = max(0.0f, ini.get_value_float(0));
+					}
+					else if (ini.is_value("min_distance_misc"))
+					{
+						minDistanceMisc = max(0.0f, ini.get_value_float(0));
+					}
+					else if (ini.is_value("min_pob_distance"))
+					{
+						minOtherPOBDistance = max(0.0f, ini.get_value_float(0));
+					}
+					else if (ini.is_value("min_jump_distance"))
+					{
+						minJumpDistance = max(0.0f, ini.get_value_float(0));
+					}
+					else if (ini.is_value("low_tier_mining_exemption"))
+					{
+						lowTierMiningCommoditiesSet.insert(CreateID(ini.get_value_string()));
+					}
+					else if(ini.is_value("deployment_cooldown"))
+					{
+						deploymentCooldownDuration = ini.get_value_int(0);
+					}
+					else if (ini.is_value("enable_distance_check"))
+					{
+						enableDistanceCheck = ini.get_value_bool(0);
+					}
+					else if (ini.is_value("banned_system"))
+					{
+						bannedSystemList.insert(CreateID(ini.get_value_string(0)));
+					}
+					else if (ini.is_value("randomize_hyperspace_hub_days"))
+					{
+						string typeStr = ToLower(ini.get_value_string(0));
+						if (typeStr.find("monday") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 1 << 0;
+						if (typeStr.find("tuesday") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 1 << 1;
+						if (typeStr.find("wednesday") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 1 << 2;
+						if (typeStr.find("thursday") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 1 << 3;
+						if (typeStr.find("friday") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 1 << 4;
+						if (typeStr.find("saturday") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 1 << 5;
+						if (typeStr.find("sunday") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 1 << 6;
+						if (typeStr.find("always") != string::npos)
+							bmapLoadHyperspaceHubConfig |= 0xff;
+					}
+					else if (ini.is_value("siege_gun"))
+					{
+						siegeWeaponryMap[CreateID(ini.get_value_string(0))] = ini.get_value_float(1);
+					}
+					else if (ini.is_value("vulnerability_window_change_cooldown"))
+					{
+						vulnerability_window_change_cooldown = 3600 * 24 * ini.get_value_int(0);
+					}
+					else if (ini.is_value("core_recipe"))
+					{
+						core_upgrade_recipes[ini.get_value_int(0)] = CreateID(ini.get_value_string(1));
+					}
+					else if (ini.is_value("core_storage"))
+					{
+						core_upgrade_storage[ini.get_value_int(0)] = ini.get_value_int(1);
+					}
 				}
+			}
+		}
+		ini.close();
+	}
+
+	if (ini.open(cfg_filemodules.c_str(), false))
+	{
+		while (ini.read_header())
+		{
+			if (ini.is_header("recipe"))
+			{
+				RECIPE recipe;
+				vector<wstring> craft_types;
+				wstring build_type;
+				uint recipe_number;
+				while (ini.read_value())
+				{
+					if (ini.is_value("nickname"))
+					{
+						recipe.nickname = CreateID(ini.get_value_string(0));
+						recipe.nicknameString = ini.get_value_string(0);
+					}
+					else if (ini.is_value("infotext"))
+					{
+						recipe.infotext = stows(ini.get_value_string(0));
+					}
+					else if (ini.is_value("craft_list"))
+					{
+						craft_types.emplace_back(stows(ToLower(ini.get_value_string(0))));
+					}
+					else if (ini.is_value("build_type"))
+					{
+						build_type = stows(ToLower(ini.get_value_string(0)));
+					}
+					else if (ini.is_value("recipe_number"))
+					{
+						recipe_number = ini.get_value_int(0);
+					}
+					else if (ini.is_value("module_class"))
+					{
+						recipe.shortcut_number = ini.get_value_int(0);
+					}
+					else if (ini.is_value("cooking_rate"))
+					{
+						recipe.cooking_rate = ini.get_value_int(0);
+					}
+					else if (ini.is_value("credit_cost"))
+					{
+						recipe.credit_cost = ini.get_value_int(0);
+					}
+					else if (ini.is_value("consumed"))
+					{
+						ValidateItem(ini.get_value_string(0));
+						recipe.consumed_items.emplace_back(make_pair(CreateID(ini.get_value_string(0)), ini.get_value_int(1)));
+					}
+					else if (ini.is_value("reqlevel"))
+					{
+						recipe.reqlevel = ini.get_value_int(0);
+					}
+					else if(ini.is_value("cargo_storage"))
+					{
+						recipe.moduleCargoStorage = ini.get_value_int(0);
+					}
+				}
+				AddModuleRecipeToMaps(recipe, craft_types, build_type, recipe_number);
 			}
 		}
 		ini.close();
@@ -578,10 +802,24 @@ void LoadSettingsActual()
 					if (ini.is_value("nickname"))
 					{
 						recipe.nickname = CreateID(ini.get_value_string(0));
+						recipe.nicknameString = ini.get_value_string(0);
 					}
 					else if (ini.is_value("produced_item"))
 					{
-						recipe.produced_item = CreateID(ini.get_value_string(0));
+						ValidateItem(ini.get_value_string(0));
+						recipe.produced_items.emplace_back(make_pair(CreateID(ini.get_value_string(0)), ini.get_value_int(1)));
+					}
+					else if (ini.is_value("loop_production"))
+					{
+						recipe.loop_production = ini.get_value_int(0);
+					}
+					else if (ini.is_value("shortcut_number"))
+					{
+						recipe.shortcut_number = ini.get_value_int(0);
+					}
+					else if (ini.is_value("craft_type"))
+					{
+						recipe.craft_type = stows(ToLower(ini.get_value_string(0)));
 					}
 					else if (ini.is_value("infotext"))
 					{
@@ -591,56 +829,38 @@ void LoadSettingsActual()
 					{
 						recipe.cooking_rate = ini.get_value_int(0);
 					}
+					else if (ini.is_value("credit_cost"))
+					{
+						recipe.credit_cost = ini.get_value_int(0);
+					}
 					else if (ini.is_value("consumed"))
 					{
-						recipe.consumed_items[CreateID(ini.get_value_string(0))] = ini.get_value_int(1);
+						ValidateItem(ini.get_value_string(0));
+						recipe.consumed_items.emplace_back(make_pair(CreateID(ini.get_value_string(0)), ini.get_value_int(1)));
+					}
+					else if (ini.is_value("catalyst"))
+					{
+						ValidateItem(ini.get_value_string(0));
+						uint cargoHash = CreateID(ini.get_value_string(0));
+						if (humanCargoList.count(cargoHash))
+						{
+							recipe.catalyst_workforce.emplace_back(make_pair(cargoHash, ini.get_value_int(1)));
+						}
+						else
+						{
+							recipe.catalyst_items.emplace_back(make_pair(cargoHash, ini.get_value_int(1)));
+						}
 					}
 					else if (ini.is_value("reqlevel"))
 					{
 						recipe.reqlevel = ini.get_value_int(0);
 					}
-				}
-				recipes[recipe.nickname] = recipe;
-			}
-		}
-		ini.close();
-	}
-
-	if (ini.open(cfg_filemodules.c_str(), false))
-	{
-		while (ini.read_header())
-		{
-			if (ini.is_header("recipe"))
-			{
-				RECIPE recipe;
-				while (ini.read_value())
-				{
-					if (ini.is_value("nickname"))
+					else if (ini.is_value("affiliation_bonus"))
 					{
-						recipe.nickname = CreateID(ini.get_value_string(0));
-					}
-					else if (ini.is_value("produced_item"))
-					{
-						recipe.produced_item = CreateID(ini.get_value_string(0));
-					}
-					else if (ini.is_value("infotext"))
-					{
-						recipe.infotext = stows(ini.get_value_string());
-					}
-					else if (ini.is_value("cooking_rate"))
-					{
-						recipe.cooking_rate = ini.get_value_int(0);
-					}
-					else if (ini.is_value("consumed"))
-					{
-						recipe.consumed_items[CreateID(ini.get_value_string(0))] = ini.get_value_int(1);
-					}
-					else if (ini.is_value("reqlevel"))
-					{
-						recipe.reqlevel = ini.get_value_int(0);
+						recipe.affiliationBonus[MakeId(ini.get_value_string(0))] = ini.get_value_float(1);
 					}
 				}
-				recipes[recipe.nickname] = recipe;
+				AddFactoryRecipeToMaps(recipe);
 			}
 		}
 		ini.close();
@@ -654,7 +874,6 @@ void LoadSettingsActual()
 			{
 				ARCHTYPE_STRUCT archstruct;
 				string nickname = "default";
-				int radius = 0;
 				while (ini.read_value())
 				{
 					if (ini.is_value("nickname"))
@@ -669,10 +888,6 @@ void LoadSettingsActual()
 					{
 						archstruct.logic = ini.get_value_int(0);
 					}
-					else if (ini.is_value("radius"))
-					{
-						archstruct.radius = ini.get_value_float(0);
-					}
 					else if (ini.is_value("idrestriction"))
 					{
 						archstruct.idrestriction = ini.get_value_int(0);
@@ -681,21 +896,21 @@ void LoadSettingsActual()
 					{
 						archstruct.isjump = ini.get_value_int(0);
 					}
+					else if (ini.is_value("ishubreturn"))
+					{
+						archstruct.ishubreturn = ini.get_value_int(0);
+					}
 					else if (ini.is_value("shipclassrestriction"))
 					{
 						archstruct.shipclassrestriction = ini.get_value_int(0);
 					}
 					else if (ini.is_value("allowedshipclasses"))
 					{
-						archstruct.allowedshipclasses.push_back(ini.get_value_int(0));
+						archstruct.allowedshipclasses.insert(ini.get_value_int(0));
 					}
 					else if (ini.is_value("allowedids"))
 					{
-						archstruct.allowedids.push_back(CreateID(ini.get_value_string(0)));
-					}
-					else if (ini.is_value("module"))
-					{
-						archstruct.modules.push_back(ini.get_value_string(0));
+						archstruct.allowedids.insert(CreateID(ini.get_value_string(0)));
 					}
 					else if (ini.is_value("display"))
 					{
@@ -709,6 +924,18 @@ void LoadSettingsActual()
 					{
 						archstruct.miningevent = ini.get_value_string(0);
 					}
+					else if (ini.is_value("shield"))
+					{
+						archstruct.hasShield = ini.get_value_int(0);
+					}
+					else if (ini.is_value("siegegunonly"))
+					{
+						archstruct.siegeGunOnly = ini.get_value_int(0);
+					}
+					else if (ini.is_value("vulnerabilitywindow"))
+					{
+						archstruct.vulnerabilityWindowUse = ini.get_value_int(0);
+					}
 				}
 				mapArchs[nickname] = archstruct;
 			}
@@ -716,6 +943,8 @@ void LoadSettingsActual()
 		ini.close();
 	}
 
+	PlayerCommands::PopulateHelpMenus();
+  
 	if (ini.open(cfg_fileforbiddencommodities.c_str(), false))
 	{
 		while (ini.read_header())
@@ -749,11 +978,11 @@ void LoadSettingsActual()
 	GetUserDataPath(datapath);
 
 	// Create base account dir if it doesn't exist
-	string basedir = string(datapath) + "\\Accts\\MultiPlayer\\player_bases\\";
+	string basedir = string(datapath) + R"(\Accts\MultiPlayer\player_bases\)";
 	CreateDirectoryA(basedir.c_str(), 0);
 
 	// Load and spawn all bases
-	string path = string(datapath) + "\\Accts\\MultiPlayer\\player_bases\\base_*.ini";
+	string path = string(datapath) + R"(\Accts\MultiPlayer\player_bases\base_*.ini)";
 
 	WIN32_FIND_DATA findfile;
 	HANDLE h = FindFirstFile(path.c_str(), &findfile);
@@ -761,13 +990,35 @@ void LoadSettingsActual()
 	{
 		do
 		{
-			string filepath = string(datapath) + "\\Accts\\MultiPlayer\\player_bases\\" + findfile.cFileName;
+			string filepath = string(datapath) + R"(\Accts\MultiPlayer\player_bases\)" + findfile.cFileName;
 			PlayerBase *base = new PlayerBase(filepath);
-			player_bases[base->base] = base;
-			base->Spawn();
+			if (base && !base->nickname.empty())
+			{
+				player_bases[base->base] = base;
+				base->Spawn();
+			}
+			else
+			{
+				AddLog("ERROR POB file corrupted: %s", findfile.cFileName);
+			}
 		} while (FindNextFile(h, &findfile));
 		FindClose(h);
 	}
+
+	// loadHyperspaceHubConfig is weekday where 0 = sunday, 6 = saturday
+	// if it's today, randomize appropriate 'jump hole' POBs
+	if (bmapLoadHyperspaceHubConfig)
+	{
+		time_t tNow = time(0);
+		struct tm *t = localtime(&tNow);
+		uint currWeekday = (t->tm_wday + 6)%7; // conversion from sunday-week-start to monday-start
+		if (bmapLoadHyperspaceHubConfig & (1 << currWeekday)) // 1 - monday, 2 - tuesday, 4 - wednesday and so on
+		{
+			HyperJump::LoadHyperspaceHubConfig(string(szCurDir));
+		}
+	}
+
+	HyperJump::InitJumpHoleConfig();
 
 	// Load and sync player state
 	struct PlayerData *pd = 0;
@@ -819,26 +1070,30 @@ void HkTimerCheckKick()
 		load_settings_required = false;
 		LoadSettingsActual();
 	}
-
 	uint curr_time = (uint)time(0);
-	isGlobalBaseInvulnerabilityActive = checkBaseVulnerabilityStatus();
-	map<uint, PlayerBase*>::iterator iter = player_bases.begin();
-	while (iter != player_bases.end())
+	for(auto& iter : player_bases)
 	{
-		PlayerBase *base = iter->second;
-		// Advance to next base in case base is deleted in timer dispatcher
-		++iter;
-		// Dispatch timer but we can safely ignore the return
+		PlayerBase *base = iter.second;
 		base->Timer(curr_time);
 	}
-	if (!player_bases.empty() && !set_holiday_mode) {
-		if (baseSaveIterator == player_bases.end()) {
+
+	if (set_plugin_debug_special && (curr_time % 60 == 0))
+	{
+		AddLog("Finished\n");
+	}
+
+	if (!player_bases.empty())
+	{
+		if (baseSaveIterator == player_bases.end())
+		{
 			baseSaveIterator = player_bases.begin();
 		}
 		bool saveSuccessful = false;
-		while (!saveSuccessful && baseSaveIterator != player_bases.end()) {
+		while (!saveSuccessful && baseSaveIterator != player_bases.end())
+		{
 			auto& pb = baseSaveIterator->second;
-			if (pb->logic == 1 || pb->invulnerable == 0) {
+			if (pb->logic == 1 || pb->invulnerable == 0)
+			{
 				pb->Save();
 				saveSuccessful = true;
 			}
@@ -846,19 +1101,29 @@ void HkTimerCheckKick()
 		}
 	}
 
-	if (ExportType == 0 || ExportType == 2)
+	if (curr_time % 8 == 0)
+	{
+		//fix custom jump solars not being dockable
+		for (uint customSolar : customSolarList)
+		{
+			uint type;
+			pub::SpaceObj::GetType(customSolar, type);
+			if (type & (JumpGate | JumpHole))
+			{
+				pub::SpaceObj::SetRelativeHealth(customSolar, 1);
+			}
+		}
+	}
+	if ((curr_time % 60) == 0)
 	{
 		// Write status to an html formatted page every 60 seconds
-		if ((curr_time % 60) == 0 && set_status_path_html.size() > 0)
+		if ((ExportType == 0 || ExportType == 2) && set_status_path_html.size() > 0)
 		{
 			ExportData::ToHTML();
 		}
-	}
 
-	if (ExportType == 1 || ExportType == 2)
-	{
 		// Write status to a json formatted page every 60 seconds
-		if ((curr_time % 60) == 0 && set_status_path_json.size() > 0)
+		if ((ExportType == 1 || ExportType == 2) && set_status_path_json.size() > 0)
 		{
 			ExportData::ToJSON();
 		}
@@ -867,8 +1132,10 @@ void HkTimerCheckKick()
 
 bool __stdcall HkCb_IsDockableError(uint dock_with, uint base)
 {
-	if (GetPlayerBase(base))
+	if (GetPlayerBase(base) || customSolarList.count(base))
+	{
 		return false;
+	}
 	ConPrint(L"ERROR: Base not found dock_with=%08x base=%08x\n", dock_with, base);
 	return true;
 }
@@ -906,10 +1173,19 @@ bool __stdcall HkCb_Land(IObjInspectImpl *obj, uint base_dock_id, uint base)
 			if (clients[client].player_base)
 				return true;
 
+			CUSTOM_MOBILE_DOCK_CHECK_STRUCT info;
+			info.iClientID = client;
+			info.isMobileDocked = false;
+			Plugin_Communication(CUSTOM_MOBILE_DOCK_CHECK, &info);
+			if (!info.isMobileDocked)
+			{
+				clients[client].last_player_base = 0;
+			}
+
 			// If we're not docking at a player base then clear 
 			// the last base flag
-			clients[client].last_player_base = 0;
 			clients[client].player_base = 0;
+
 			if (base == 0)
 			{
 				char szSystem[1024];
@@ -1028,11 +1304,20 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 			}
 		}
 
-		map<uint, PlayerBase*>::iterator base = player_bases.begin();
-		for (; base != player_bases.end(); base++)
+		for (auto& base : player_bases)
 		{
-			delete base->second;
+			delete base.second;
 		}
+		player_bases.clear();
+
+		for (uint customSolar : customSolarList)
+		{
+			if (pub::SpaceObj::ExistsAndAlive(customSolar) == 0) // this method returns -2 for dead, 0 for alive
+			{
+				pub::SpaceObj::Destroy(customSolar, DestroyType::FUSE);
+			}
+		}
+		customSolarList.clear();
 
 		HkUnloadStringDLLs();
 	}
@@ -1075,9 +1360,7 @@ bool UserCmd_Process(uint client, const wstring &args)
 	else if (args.find(L"/base addtag") == 0)
 	{
 		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		PrintUserCmdText(client, L"Checking if ship/tag exist in blacklist...");
-		PlayerCommands::BaseRmHostileTag(client, args);
-		PrintUserCmdText(client, L"Proceeding...");
+		PlayerCommands::BaseRmHostileTag(client, args, false);
 		PlayerCommands::BaseAddAllyTag(client, args);
 		return true;
 	}
@@ -1186,6 +1469,12 @@ bool UserCmd_Process(uint client, const wstring &args)
 		PlayerCommands::BaseDeploy(client, args);
 		return true;
 	}
+	else if (args.find(L"/base testdeploy") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		PlayerCommands::BaseTestDeploy(client, args);
+		return true;
+	}
 	else if (args.find(L"/shop") == 0)
 	{
 		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
@@ -1210,7 +1499,7 @@ bool UserCmd_Process(uint client, const wstring &args)
 		PlayerCommands::GetNecessitiesStatus(client, args);
 		return true;
 	}
-	else if (args.find(L"/base facmod") == 0)
+	else if (args.find(L"/craft") == 0)
 	{
 		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
 		PlayerCommands::BaseFacMod(client, args);
@@ -1222,16 +1511,34 @@ bool UserCmd_Process(uint client, const wstring &args)
 		PlayerCommands::BaseDefMod(client, args);
 		return true;
 	}
-	else if (args.find(L"/base shieldmod") == 0)
-	{
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		PlayerCommands::BaseShieldMod(client, args);
-		return true;
-	}
-	else if (args.find(L"/base buildmod") == 0)
+	else if (args.find(L"/build") == 0)
 	{
 		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
 		PlayerCommands::BaseBuildMod(client, args);
+		return true;
+	}
+	else if (args.find(L"/destroy") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		PlayerCommands::BaseBuildModDestroy(client, args);
+		return true;
+	}
+	else if (args.find(L"/base swap") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		PlayerCommands::BaseSwapModule(client, args);
+		return true;
+	}
+	else if (args.find(L"/base setshield") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		PlayerCommands::BaseSetVulnerabilityWindow(client, args);
+		return true;
+	}
+	else if (args.find(L"/vuln") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		PlayerCommands::BaseCheckVulnerabilityWindow(client);
 		return true;
 	}
 	else if (args.find(L"/base") == 0)
@@ -1243,7 +1550,17 @@ bool UserCmd_Process(uint client, const wstring &args)
 	return false;
 }
 
+static void ForcePlayerBaseDock(uint client, PlayerBase *base)
+{
+	clients[client].player_base = base->base;
+	clients[client].last_player_base = base->base;
 
+	if (set_plugin_debug > 1)
+	{
+		ConPrint(L"ForcePlayerBaseDock client=%u player_base=%u\n", client, clients[client].player_base);
+	}
+	HkBeamById(client, base->proxy_base);
+}
 
 static bool IsDockingAllowed(PlayerBase *base, uint client)
 {
@@ -1258,9 +1575,9 @@ static bool IsDockingAllowed(PlayerBase *base, uint client)
 	}
 
 	//Hostile listed can't dock even if they are friendly faction listed
-	for (list<wstring>::iterator i = base->perma_hostile_tags.begin(); i != base->perma_hostile_tags.end(); ++i)
+	for (auto& i : base->perma_hostile_tags)
 	{
-		if (charname.find(*i) == 0)
+		if (charname.find(i) == 0)
 		{
 			return false;
 		}
@@ -1294,131 +1611,107 @@ static bool IsDockingAllowed(PlayerBase *base, uint client)
 	return false;
 }
 
-// If this is a docking request at a player controlled based then send
-// an update to set the base arrival text, base economy and change the
-// infocards.
-
-void __stdcall SystemSwitchOutComplete(unsigned int iShip, unsigned int iClientID)
+void __stdcall SetTarget(uint iClientID, XSetTarget const& setTarget)
 {
 	returncode = DEFAULT_RETURNCODE;
-	// Make player invincible to fix JHs/JGs near mine fields sometimes
-	// exploding player while jumping (in jump tunnel)
-	pub::SpaceObj::SetInvincible(iShip, true, true, 0);
-	if (AP::SystemSwitchOutComplete(iShip, iClientID))
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+	if (setTarget.iSlot)
+	{
+		return;
+	}
+	if (player_bases.count(setTarget.iSpaceID))
+	{
+		PlayerBase* base = player_bases.at(setTarget.iSpaceID);
+		pub::SpaceObj::SetRelativeHealth(setTarget.iSpaceID, base->base_health / base->max_base_health);
+	}
 }
 
-int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &base, int iCancel, enum DOCK_HOST_RESPONSE response)
+int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &base, int& iCancel, enum DOCK_HOST_RESPONSE& response)
 {
 	returncode = DEFAULT_RETURNCODE;
 
-	uint client = HkGetClientIDByShip(iShip);
 	//AP::ClearClientInfo(client);
 
-	if (client && (response == PROCEED_DOCK || response == DOCK) && iCancel != -1)
+	if (!((response == PROCEED_DOCK || response == DOCK) && iCancel != -1))
 	{
-		PlayerBase* pbase = GetPlayerBase(base);
-		if (pbase)
-		{
-			if (mapArchs[pbase->basetype].isjump == 1)
-			{
-				//check if we have an ID restriction
-				if (mapArchs[pbase->basetype].idrestriction == 1)
-				{
-					bool foundid = false;
-					for (list<EquipDesc>::iterator item = Players[client].equipDescList.equip.begin(); item != Players[client].equipDescList.equip.end(); item++)
-					{
-						if (item->bMounted)
-						{
-							list<uint>::iterator iditer = mapArchs[pbase->basetype].allowedids.begin();
-							while (iditer != mapArchs[pbase->basetype].allowedids.end())
-							{
-								if (*iditer == item->iArchID)
-								{
-									foundid = true;
-									PrintUserCmdText(client, L"DEBUG: Found acceptable ID.");
-									break;
-								}
-								iditer++;
-							}
-						}
-					}
-					if (foundid == false)
-					{
-						PrintUserCmdText(client, L"ERR Unable to dock with this ID.");
-						pub::Player::SendNNMessage(client, pub::GetNicknameId("info_access_denied"));
-						returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-						return 0;
-					}
-				}
-
-				//check if we have a shipclass restriction
-				if (mapArchs[pbase->basetype].shipclassrestriction == 1)
-				{
-					bool foundclass = false;
-					// get the player ship class
-					Archetype::Ship* TheShipArch = Archetype::GetShip(Players[client].iShipArchetype);
-					uint shipclass = TheShipArch->iShipClass;
-
-					list<uint>::iterator iditer = mapArchs[pbase->basetype].allowedshipclasses.begin();
-					while (iditer != mapArchs[pbase->basetype].allowedshipclasses.end())
-					{
-						if (*iditer == shipclass)
-						{
-							foundclass = true;
-							PrintUserCmdText(client, L"DEBUG: Found acceptable shipclass.");
-							break;
-						}
-						iditer++;
-					}
-
-					if (foundclass == false)
-					{
-						PrintUserCmdText(client, L"ERR Unable to dock with a vessel of this type.");
-						pub::Player::SendNNMessage(client, pub::GetNicknameId("info_access_denied"));
-						returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-						return 0;
-					}
-				}
-
-				Vector pos;
-				Matrix ornt;
-
-				pub::SpaceObj::GetLocation(iShip, pos, ornt);
-
-				pos.x = pbase->destposition.x;
-				pos.y = pbase->destposition.y;
-				pos.z = pbase->destposition.z;
-
-				const Universe::ISystem *iSys = Universe::get_system(pbase->destsystem);
-				wstring wscSysName = HkGetWStringFromIDS(iSys->strid_name);
-
-				//PrintUserCmdText(client, L"Jump to system=%s x=%0.0f y=%0.0f z=%0.0f\n", wscSysName.c_str(), pos.x, pos.y, pos.z);
-				AP::SwitchSystem(client, pbase->destsystem, pos, ornt);
-				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-				return 1;
-			}
-
-			// Shield is up, docking is not possible.
-			if (pbase->shield_active_time)
-			{
-				PrintUserCmdText(client, L"Docking failed because base shield is active");
-				pub::Player::SendNNMessage(client, pub::GetNicknameId("info_access_denied"));
-				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-				return 0;
-			}
-
-			if (!IsDockingAllowed(pbase, client))
-			{
-				PrintUserCmdText(client, L"Docking at this base is restricted");
-				pub::Player::SendNNMessage(client, pub::GetNicknameId("info_access_denied"));
-				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-				return 0;
-			}
-
-			SendBaseStatus(client, pbase);
-		}
+		return 0;
 	}
+	PlayerBase* pbase = GetPlayerBase(base);
+	if (!pbase)
+	{
+		return 0;
+	}
+
+	uint client = HkGetClientIDByShip(iShip);
+
+	if (!client)
+	{
+		return 0;
+	}
+
+	if (mapArchs[pbase->basetype].isjump == 1)
+	{
+		//check if we have an ID restriction
+		if (mapArchs[pbase->basetype].idrestriction == 1)
+		{
+			bool foundid = false;
+			for (list<EquipDesc>::iterator item = Players[client].equipDescList.equip.begin(); item != Players[client].equipDescList.equip.end(); item++)
+			{
+				if (item->bMounted && mapArchs[pbase->basetype].allowedids.count(item->iArchID))
+				{
+					foundid = true;
+					break;
+				}
+			}
+			if (foundid == false)
+			{
+				PrintUserCmdText(client, L"ERR Unable to dock with this ID.");
+				iCancel = -1;
+				response = ACCESS_DENIED;
+				return 0;
+			}
+		}
+
+		//check if we have a shipclass restriction
+		if (mapArchs[pbase->basetype].shipclassrestriction == 1)
+		{
+			bool foundclass = false;
+			// get the player ship class
+			Archetype::Ship* TheShipArch = Archetype::GetShip(Players[client].iShipArchetype);
+			uint shipclass = TheShipArch->iShipClass;
+
+			if(!mapArchs[pbase->basetype].allowedshipclasses.count(shipclass))
+			{
+				PrintUserCmdText(client, L"ERR Unable to dock with a vessel of this type.");
+				iCancel = -1;
+				response = ACCESS_DENIED;
+				return 0;
+			}
+		}
+
+		SendJumpObjOverride(client, base, pbase->destSystem);
+
+		return 0;
+	}
+
+	// Shield is up, docking is not possible.
+	if (pbase->shield_timeout)
+	{
+		PrintUserCmdText(client, L"Docking failed because base shield is active");
+		iCancel = -1;
+		response = ACCESS_DENIED;
+		return 0;
+	}
+
+	if (!IsDockingAllowed(pbase, client))
+	{
+		PrintUserCmdText(client, L"Docking at this base is restricted");
+		iCancel = -1;
+		response = ACCESS_DENIED;
+		return 0;
+	}
+
+	SendBaseStatus(client, pbase);
+	
 	return 0;
 }
 
@@ -1426,11 +1719,10 @@ void __stdcall CharacterSelect(struct CHARACTER_ID const &cId, unsigned int clie
 {
 	returncode = DEFAULT_RETURNCODE;
 
-	// Sync base names for the 
-	map<uint, PlayerBase*>::iterator base = player_bases.begin();
-	for (; base != player_bases.end(); base++)
+	// Sync base names for the new player
+	for (auto& base : player_bases)
 	{
-		HkChangeIDSString(client, base->second->solar_ids, base->second->basename);
+		HkChangeIDSString(client, base.second->solar_ids, base.second->basename);
 	}
 }
 
@@ -1479,6 +1771,17 @@ void __stdcall BaseEnter(uint base, uint client)
 	clients[client].admin = false;
 	clients[client].viewshop = false;
 
+	// Check if ships is currently docked on a docking module
+	CUSTOM_MOBILE_DOCK_CHECK_STRUCT mobileCheck;
+	mobileCheck.iClientID = client;
+	Plugin_Communication(PLUGIN_MESSAGE::CUSTOM_MOBILE_DOCK_CHECK, &mobileCheck);
+
+	// skip processing in case of having docked on player ship to avoid overwriting F9 menu.
+	if (mobileCheck.isMobileDocked)
+	{
+		return;
+	}
+
 	// If the last player base is set then we have not docked at a non player base yet.
 	if (clients[client].last_player_base)
 	{
@@ -1524,14 +1827,24 @@ void __stdcall BaseExit(uint base, uint client)
 	// Reset client state and save it retaining the last player base ID to deal with respawn.
 	clients[client].admin = false;
 	clients[client].viewshop = false;
-	if (clients[client].player_base)
+
+	CUSTOM_MOBILE_DOCK_CHECK_STRUCT mobileCheck;
+	mobileCheck.iClientID = client;
+	Plugin_Communication(PLUGIN_MESSAGE::CUSTOM_MOBILE_DOCK_CHECK, &mobileCheck);
+
+	if (clients[client].player_base || mobileCheck.isMobileDocked)
 	{
 		if (set_plugin_debug)
+		{
 			ConPrint(L"BaseExit base=%u client=%u player_base=%u\n", base, client, clients[client].player_base);
+		}
 
-		clients[client].last_player_base = clients[client].player_base;
-		clients[client].player_base = 0;
-		SaveDockState(client);
+		if (clients[client].player_base) {
+			clients[client].last_player_base = clients[client].player_base;
+			clients[client].player_base = 0;
+			SaveDockState(client);
+			clients[client].player_base = clients[client].last_player_base;
+		}
 	}
 	else
 	{
@@ -1542,8 +1855,6 @@ void __stdcall BaseExit(uint base, uint client)
 	SendResetMarketOverride(client);
 	SendSetBaseInfoText2(client, L"");
 
-	//wstring base_status = L"<RDL><PUSH/>";
-	//base_status += L"<TEXT>" + XMLText(base->name) + L", " + HkGetWStringFromIDS(sys->strid_name) +  L"</TEXT><PARA/><PARA/>";
 }
 
 void __stdcall RequestEvent(int iIsFormationRequest, unsigned int iShip, unsigned int iDockTarget, unsigned int p4, unsigned long p5, unsigned int client)
@@ -1557,7 +1868,7 @@ void __stdcall RequestEvent(int iIsFormationRequest, unsigned int iShip, unsigne
 			if (base)
 			{
 				// Shield is up, docking is not possible.
-				if (base->shield_active_time)
+				if (base->shield_timeout)
 				{
 					PrintUserCmdText(client, L"Docking failed because base shield is active");
 					pub::Player::SendNNMessage(client, pub::GetNicknameId("info_access_denied"));
@@ -1578,7 +1889,7 @@ void __stdcall RequestEvent(int iIsFormationRequest, unsigned int iShip, unsigne
 }
 
 /// The base the player is launching from.
-PlayerBase* player_launch_base = 0;
+PlayerBase* player_launch_base = nullptr;
 
 /// If the ship is launching from a player base record this so that
 /// override the launch location.
@@ -1594,7 +1905,7 @@ bool __stdcall LaunchPosHook(uint space_obj, struct CEqObj &p1, Vector &pos, Mat
 		if (set_plugin_debug)
 			ConPrint(L"LaunchPosHook[1] space_obj=%u pos=%0.0f %0.0f %0.0f dock_mode=%u\n",
 				space_obj, pos.x, pos.y, pos.z, dock_mode);
-		player_launch_base = 0;
+		player_launch_base = nullptr;
 	}
 	return true;
 }
@@ -1604,9 +1915,15 @@ bool __stdcall LaunchPosHook(uint space_obj, struct CEqObj &p1, Vector &pos, Mat
 void __stdcall PlayerLaunch(unsigned int ship, unsigned int client)
 {
 	returncode = DEFAULT_RETURNCODE;
+
 	if (set_plugin_debug > 1)
 		ConPrint(L"PlayerLaunch ship=%u client=%u\n", ship, client);
-	player_launch_base = GetPlayerBase(clients[client].last_player_base);
+
+	if (!clients[client].player_base)
+		return;
+
+	player_launch_base = GetPlayerBase(clients[client].player_base);
+	clients[client].player_base = 0;
 }
 
 
@@ -1635,8 +1952,8 @@ uint lastTransactionArchID = 0;
 int lastTransactionCount = 0;
 uint lastTransactionClientID = 0;
 
-bool checkIfCommodityForbidden(uint goodId) {
-	
+bool CheckIfCommodityForbidden(uint goodId)
+{
 	return forbidden_player_base_commodity_set.find(goodId) != forbidden_player_base_commodity_set.end();
 }
 
@@ -1659,7 +1976,8 @@ void __stdcall GFGoodSell(struct SGFGoodSellInfo const &gsi, unsigned int client
 			return;
 		}
 
-		if (checkIfCommodityForbidden(gsi.iArchID)) {
+		if (CheckIfCommodityForbidden(gsi.iArchID))
+		{
 
 			PrintUserCmdText(client, L"ERR: Cargo is not allowed on Player Bases");
 			clients[client].reverse_sell = true;
@@ -1670,25 +1988,6 @@ void __stdcall GFGoodSell(struct SGFGoodSellInfo const &gsi, unsigned int client
 
 		uint count = gsi.iCount;
 		int price = (int)item.price * count;
-
-		// base money check //
-		if (count > ULONG_MAX / item.price)
-		{
-			clients[client].reverse_sell = true;
-			PrintUserCmdText(client, L"KITTY ALERT. Illegal sale detected.");
-
-			wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(client);
-			pub::Player::SendNNMessage(client, pub::GetNicknameId("nnv_anomaly_detected"));
-			wstring wscMsgU = L"KITTY ALERT: Possible type 3 POB cheating by %name (Count = %count, Price = %price)\n";
-			wscMsgU = ReplaceStr(wscMsgU, L"%name", wscCharname.c_str());
-			wscMsgU = ReplaceStr(wscMsgU, L"%count", stows(itos(count)).c_str());
-			wscMsgU = ReplaceStr(wscMsgU, L"%price", stows(itos((int)item.price)).c_str());
-
-			ConPrint(wscMsgU);
-			LogCheater(client, wscMsgU);
-
-			return;
-		}
 
 		if (price < 0)
 		{
@@ -1721,6 +2020,25 @@ void __stdcall GFGoodSell(struct SGFGoodSellInfo const &gsi, unsigned int client
 		{
 			PrintUserCmdText(client, L"ERR: Base cannot accept goods, stock limit reached");
 			clients[client].reverse_sell = true;
+			return;
+		}
+
+		if (count > LONG_MAX / item.price)
+		{
+			clients[client].reverse_sell = true;
+			PrintUserCmdText(client, L"KITTY ALERT. Illegal sale detected.");
+
+			wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(client);
+			pub::Player::SendNNMessage(client, pub::GetNicknameId("nnv_anomaly_detected"));
+			wstring wscMsgU = L"KITTY ALERT: Possible type 3 POB cheating by %name (Base = %base, Count = %count, Price = %price)\n";
+			wscMsgU = ReplaceStr(wscMsgU, L"%name", wscCharname.c_str());
+			wscMsgU = ReplaceStr(wscMsgU, L"%count", stows(itos(count)).c_str());
+			wscMsgU = ReplaceStr(wscMsgU, L"%price", stows(itos((int)item.price)).c_str());
+			wscMsgU = ReplaceStr(wscMsgU, L"%base", base->basename.c_str());
+
+			ConPrint(wscMsgU);
+			LogCheater(client, wscMsgU);
+
 			return;
 		}
 
@@ -2026,127 +2344,53 @@ void __stdcall CShip_destroy(CShip* ship)
 	}
 }
 
-void BaseDestroyed(uint space_obj, uint client)
+void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint dunno)
 {
 	returncode = DEFAULT_RETURNCODE;
+	uint space_obj = iobj->get_id();
 	auto& i = spaceobj_modules.find(space_obj);
 	if (i != spaceobj_modules.end())
 	{
 		returncode = SKIPPLUGINS;
 		i->second->SpaceObjDestroyed(space_obj);
+		return;
 	}
+	customSolarList.erase(space_obj);
 }
 
-void __stdcall HkCb_AddDmgEntry(DamageList *dmg, unsigned short sID, float& newHealth, enum DamageEntry::SubObjFate& fate)
+void __stdcall HkCb_AddDmgEntry(IObjRW* iobj, float incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
-	if (!iDmgToSpaceID || !dmg->get_inflictor_id())
+	if (!dmg->iInflictorPlayerID)
 	{
 		return;
 	}
-	
-	if (!spaceobj_modules.count(iDmgToSpaceID)) {
+
+	CSolar* base = (CSolar*)iobj->cobj;
+	if (!spaceobj_modules.count(base->id))
+	{
 		return;
 	}
+
+	returncode = SKIPPLUGINS_NOFUNCTIONCALL;
 
 	Module* damagedModule = spaceobj_modules[iDmgToSpaceID];
-	if(damagedModule->mining){
-		return;
-	}
-	
-	if (set_holiday_mode)
-	{
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		iDmgToSpaceID = 0;
-		return;
-	}
-	float curr, max;
-	pub::SpaceObj::GetHealth(iDmgToSpaceID, curr, max);
 
-	if (set_plugin_debug)
-		ConPrint(L"HkCb_AddDmgEntry iDmgToSpaceID=%u get_inflictor_id=%u curr=%0.2f max=%0.0f newHealth=%0.2f cause=%u is_player=%u player_id=%u fate=%u\n",
-			iDmgToSpaceID, dmg->get_inflictor_id(), curr, max, newHealth, dmg->get_cause(), dmg->is_inflictor_a_player(), dmg->get_inflictor_owner_player(), fate);
-
-	// A work around for an apparent bug where mines/missiles at the base
-	// causes the base damage to jump down to 0 even if the base is
-	// otherwise healthy.
-	if (newHealth == 0.0f /*&& dmg->get_cause()==7*/ && curr > 200000)
-	{
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		if (set_plugin_debug)
-			ConPrint(L"HkCb_AddDmgEntry[1] - invalid damage?\n");
-		return;
-	}
-
-	// Ask the combat magic plugin if we need to do anything differently
-	COMBAT_DAMAGE_OVERRIDE_STRUCT info;
-	info.iMunitionID = iDmgMunitionID;
-	info.fDamageMultiplier = 0.0f;
-	Plugin_Communication(COMBAT_DAMAGE_OVERRIDE, &info);
-
-	if (info.fDamageMultiplier != 0.0f)
-	{
-		newHealth = (curr - (curr - newHealth) * info.fDamageMultiplier);
-		if (newHealth < 0.0f)
-			newHealth = 0.0f;
-	}
+	float curr = base->hitPoints;
+	float max = base->solararch()->fHitPoints;
 
 	// This call is for us, skip all plugins.
-	iDmgToSpaceID = 0;
-	newHealth = damagedModule->SpaceObjDamaged(iDmgToSpaceID, dmg->get_inflictor_id(), curr, newHealth);
-	if (newHealth == curr) {
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+	float newHealth = damagedModule->SpaceObjDamaged(iDmgToSpaceID, dmg->get_inflictor_id(), curr, newHealth);
+	if (newHealth == curr)
+	{
 		return;
 	}
-
-	returncode = SKIPPLUGINS;
-
-	if (newHealth <= 0 && sID == 1)
+	if (newHealth == 0.0f)
 	{
-		uint iType;
-		pub::SpaceObj::GetType(iDmgToSpaceID, iType);
-		uint iClientIDKiller = HkGetClientIDByShip(dmg->get_inflictor_id());
-		if (set_plugin_debug)
-			ConPrint(L"HkCb_AddDmgEntry[2]: iType is %u, iClientIDKiller is %u\n", iType, iClientIDKiller);
-		if (iClientIDKiller && iType & (OBJ_DOCKING_RING | OBJ_STATION | OBJ_WEAPONS_PLATFORM))
-			BaseDestroyed(iDmgToSpaceID, iClientIDKiller);
+		((CoreModule*)damagedModule)->SpaceObjDestroyed(iDmgToSpaceID);
 	}
-}
 
-static void ForcePlayerBaseDock(uint client, PlayerBase *base)
-{
-	char system_nick[1024];
-	pub::GetSystemNickname(system_nick, sizeof(system_nick), base->system);
-
-	char proxy_base_nick[1024];
-	sprintf(proxy_base_nick, "%s_proxy_base", system_nick);
-
-	uint proxy_base_id = CreateID(proxy_base_nick);
-
-	clients[client].player_base = base->base;
-	clients[client].last_player_base = base->base;
-
-	if (set_plugin_debug > 1)
-		ConPrint(L"ForcePlayerBaseDock client=%u player_base=%u\n", client, clients[client].player_base);
-
-	uint system;
-	pub::Player::GetSystem(client, system);
-
-	pub::Player::ForceLand(client, proxy_base_id);
-	if (system != base->system)
-	{
-		Server.BaseEnter(proxy_base_id, client);
-		Server.BaseExit(proxy_base_id, client);
-
-		wstring charname = (const wchar_t*)Players.GetActiveCharacterName(client);
-		wstring charfilename;
-		HkGetCharFileName(charname, charfilename);
-		charfilename += L".fl";
-		CHARACTER_ID charid;
-		strcpy(charid.szCharFilename, wstos(charname.substr(0, 14)).c_str());
-
-		Server.CharacterSelect(charid, client); \
-	}
+	dmg->add_damage_entry(1, newHealth, (DamageEntry::SubObjFate)0);
 }
 
 #define IS_CMD(a) !args.compare(L##a)
@@ -2154,49 +2398,14 @@ static void ForcePlayerBaseDock(uint client, PlayerBase *base)
 bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 {
 	returncode = DEFAULT_RETURNCODE;
-	/*if (args.find(L"dumpbases")==0)
-	{
-		Universe::ISystem *sys = Universe::GetFirstSystem();
-		FILE* f = fopen("bases.txt", "w");
-		while (sys)
-		{
-			fprintf(f, "[Base]\n");
-			fprintf(f, "nickname = %s_proxy_base\n", sys->nickname);
-			fprintf(f, "system = %s\n", sys->nickname);
-			fprintf(f, "strid_name = 0\n");
-			fprintf(f, "file=Universe\\Systems\\proxy_base->ini\n");
-			fprintf(f, "BGCS_base_run_by=W02bF35\n\n");
 
-			sys = Universe::GetNextSystem();
-		}
-		fclose(f);
-	}
-	if (args.find(L"makebases")==0)
+	if (args.find(L"setdebugspecial") == 0)
 	{
-		struct Universe::ISystem *sys = Universe::GetFirstSystem();
-		while (sys)
-		{
-			string path = string("..\\DATA\\UNIVERSE\\SYSTEMS\\") + string(sys->nickname) + "\\" + string(sys->nickname) + ".ini";
-			FILE *file = fopen(path.c_str(), "a+");
-			if (file)
-			{
-				ConPrint(L"doing path %s\n", stows(path).c_str());
-				fprintf(file, "\n\n[Object]\n");
-				fprintf(file, "nickname = %s_proxy_base\n", sys->nickname);
-				fprintf(file, "dock_with = %s_proxy_base\n", sys->nickname);
-				fprintf(file, "base = %s_proxy_base\n", sys->nickname);
-				fprintf(file, "pos = 0, -100000, 0\n");
-				fprintf(file, "archetype = invisible_base\n");
-				fprintf(file, "behavior = NOTHING\n");
-				fprintf(file, "visit = 128\n");
-				fclose(file);
-			}
-			sys = Universe::GetNextSystem();
-		}
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		set_plugin_debug_special = cmd->ArgInt(1);
 		return true;
-	}*/
-
-	if (args.find(L"testrecipe") == 0)
+	}
+	else if (args.find(L"testmodulerecipe") == 0)
 	{
 		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
 
@@ -2210,10 +2419,38 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 			return true;
 		}
 
-		uint recipe_name = CreateID(wstos(cmd->ArgStr(1)).c_str());
+		const wchar_t* recipe_name = cmd->ArgStr(1).c_str();
 
-		RECIPE recipe = recipes[recipe_name];
-		for (map<uint, uint>::iterator i = recipe.consumed_items.begin(); i != recipe.consumed_items.end(); ++i)
+		RECIPE recipe = moduleNameRecipeMap[recipe_name];
+		for (auto& i = recipe.consumed_items.begin(); i != recipe.consumed_items.end(); ++i)
+		{
+			base->market_items[i->first].quantity += i->second;
+			SendMarketGoodUpdated(base, i->first, base->market_items[i->first]);
+			cmd->Print(L"Added %ux %08x", i->second, i->first);
+		}
+		base->Save();
+		cmd->Print(L"OK");
+		return true;
+	}
+	else if (args.find(L"testfacrecipe") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+
+		RIGHT_CHECK(RIGHT_BASES)
+
+		uint client = HkGetClientIdFromCharname(cmd->GetAdminName());
+		PlayerBase *base = GetPlayerBaseForClient(client);
+		if (!base)
+		{
+			cmd->Print(L"ERR Not in player base");
+			return true;
+		}
+
+		const wchar_t* craft_type = cmd->ArgStr(1).c_str();
+		const wchar_t* recipe_name = cmd->ArgStr(2).c_str();
+
+		RECIPE recipe = recipeCraftTypeNameMap[craft_type][recipe_name];
+		for (auto& i = recipe.consumed_items.begin(); i != recipe.consumed_items.end(); ++i)
 		{
 			base->market_items[i->first].quantity += i->second;
 			SendMarketGoodUpdated(base, i->first, base->market_items[i->first]);
@@ -2248,12 +2485,11 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 	}
 	else if (args.compare(L"beam") == 0)
 	{
-		returncode = DEFAULT_RETURNCODE;
 		wstring charname = cmd->ArgCharname(1);
 		wstring basename = cmd->ArgStrToEnd(2);
 
 		// Fall back to default behaviour.
-		if (cmd->rights != RIGHT_SUPERADMIN)
+		if (!(cmd->rights & RIGHT_BEAMKILL))
 		{
 			return false;
 		}
@@ -2270,24 +2506,24 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		}
 
 		// Search for an match at the start of the name
-		for (map<uint, PlayerBase*>::iterator i = player_bases.begin(); i != player_bases.end(); ++i)
+		for (auto& i : player_bases)
 		{
-			if (ToLower(i->second->basename).find(ToLower(basename)) == 0)
+			if (ToLower(i.second->basename).find(ToLower(basename)) == 0)
 			{
 				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-				ForcePlayerBaseDock(info.iClientID, i->second);
+				ForcePlayerBaseDock(info.iClientID, i.second);
 				cmd->Print(L"OK");
 				return true;
 			}
 		}
 
 		// Exact match failed, try a for an partial match
-		for (map<uint, PlayerBase*>::iterator i = player_bases.begin(); i != player_bases.end(); ++i)
+		for (auto& i : player_bases)
 		{
-			if (ToLower(i->second->basename).find(ToLower(basename)) != -1)
+			if (ToLower(i.second->basename).find(ToLower(basename)) != -1)
 			{
 				returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-				ForcePlayerBaseDock(info.iClientID, i->second);
+				ForcePlayerBaseDock(info.iClientID, i.second);
 				cmd->Print(L"OK");
 				return true;
 			}
@@ -2304,33 +2540,102 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 
 		uint client = HkGetClientIdFromCharname(cmd->GetAdminName());
 
-		//return SpaceObjDestroyed(space_obj);
-		//alleynote1
-		int billythecat = 0;
 		PlayerBase *base;
-		for (map<uint, PlayerBase*>::iterator i = player_bases.begin(); i != player_bases.end(); ++i)
+		for (auto& i : player_bases)
 		{
-			if (i->second->basename == cmd->ArgStrToEnd(1))
+			if (i.second->basename == cmd->ArgStrToEnd(1) || stows(i.second->nickname) == cmd->ArgStrToEnd(1))
 			{
-				base = i->second;
-				billythecat = 1;
+				base = i.second;
+				break;
 			}
 		}
 
 
-		if (billythecat == 0)
+		if (!base)
 		{
-			cmd->Print(L"ERR Base doesn't exist lmao");
+			cmd->Print(L"ERR Base doesn't exist");
 			return true;
 		}
 
 		base->base_health = 0;
-		if (base->base_health < 1)
+		return CoreModule(base).SpaceObjDestroyed(CoreModule(base).space_obj);
+
+	}
+	else if (args.find(L"basedespawn") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+
+		RIGHT_CHECK(RIGHT_BASES)
+
+		uint client = HkGetClientIdFromCharname(cmd->GetAdminName());
+
+		PlayerBase* base;
+		for (auto& i : player_bases)
 		{
-			return CoreModule(base).SpaceObjDestroyed(CoreModule(base).space_obj);
+			if (i.second->basename == cmd->ArgStrToEnd(1))
+			{
+				base = i.second;
+				break;
+			}
 		}
 
-		//cmd->Print(L"OK Base is gone are you proud of yourself.");
+		if (!base)
+		{
+			cmd->Print(L"ERR Base doesn't exist");
+			return true;
+		}
+
+		base->base_health = 0;
+		return CoreModule(base).SpaceObjDestroyed(CoreModule(base).space_obj, false, false);
+
+	}
+	else if (args.find(L"baserespawn") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+
+		RIGHT_CHECK(RIGHT_BASES)
+
+		uint client = HkGetClientIdFromCharname(cmd->GetAdminName());
+
+		char datapath[MAX_PATH];
+		GetUserDataPath(datapath);
+
+		wstring baseName = cmd->ArgStrToEnd(1);
+
+		// Load and spawn all bases
+		string path = string(datapath) + R"(\Accts\MultiPlayer\player_bases\)" + wstos(baseName) + ".ini";
+
+		WIN32_FIND_DATA findfile;
+		HANDLE h = FindFirstFile(path.c_str(), &findfile);
+		if (h == INVALID_HANDLE_VALUE)
+		{
+			cmd->Print(L"ERR Base file not found");
+			return true;
+		}
+
+		uint baseNickname = CreateID(IniGetS(path, "Base", "nickname", "").c_str());
+
+		if (pub::SpaceObj::ExistsAndAlive(baseNickname) == 0) // -2 for nonexistant object, 0 for existing and alive
+		{
+			cmd->Print(L"ERR Base already spawned!\n");
+			return true;
+		}
+
+		PlayerBase* base = new PlayerBase(path);
+
+		FindClose(h);
+		if (base && !base->nickname.empty())
+		{
+			player_bases[base->base] = base;
+			base->Spawn();
+			cmd->Print(L"Base respawned!\n");
+		}
+		else
+		{
+			cmd->Print(L"ERROR POB file corrupted: %ls\n", stows(path).c_str());
+		}
+
+
 		return true;
 	}
 	else if (args.find(L"basetogglegod") == 0)
@@ -2342,24 +2647,20 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		uint client = HkGetClientIdFromCharname(cmd->GetAdminName());
 		bool optype = cmd->ArgInt(1);
 
-		//return SpaceObjDestroyed(space_obj);
-		//alleynote1
-		int billythecat = 0;
 		PlayerBase *base;
-		for (map<uint, PlayerBase*>::iterator i = player_bases.begin(); i != player_bases.end(); ++i)
+		for (auto& i : player_bases)
 		{
-			if (i->second->basename == cmd->ArgStrToEnd(2))
+			if (i.second->basename == cmd->ArgStrToEnd(2))
 			{
-				base = i->second;
-				billythecat = 1;
+				base = i.second;
 				break;
 			}
 		}
 
 
-		if (billythecat == 0)
+		if (!base)
 		{
-			cmd->Print(L"ERR Base doesn't exist lmao");
+			cmd->Print(L"ERR Base doesn't exist");
 			return true;
 		}
 
@@ -2428,17 +2729,10 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		newbase->basesolar = "legacy";
 		newbase->baseloadout = "legacy";
 		newbase->defense_mode = 1;
+		newbase->isCrewSupplied = true;
 
-		for (map<string, ARCHTYPE_STRUCT>::iterator iter = mapArchs.begin(); iter != mapArchs.end(); iter++)
-		{
-
-			ARCHTYPE_STRUCT &thearch = iter->second;
-			if (iter->first == newbase->basetype)
-			{
-				newbase->invulnerable = thearch.invulnerable;
-				newbase->logic = thearch.logic;
-			}
-		}
+		newbase->invulnerable = mapArchs[newbase->basetype].invulnerable;
+		newbase->logic = mapArchs[newbase->basetype].logic;
 
 		newbase->Spawn();
 		newbase->Save();
@@ -2455,7 +2749,6 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		RIGHT_CHECK(RIGHT_BASES)
 
 		uint client = HkGetClientIdFromCharname(cmd->GetAdminName());
-		PlayerBase *base = GetPlayerBaseForClient(client);
 
 		uint ship;
 		pub::Player::GetShip(client, ship);
@@ -2464,6 +2757,8 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 			PrintUserCmdText(client, L"ERR Not in space");
 			return true;
 		}
+
+		wstring usage = L"Usage: .jumpcreate <archtype> <loadout> <type> <dest object> <affiliation> <name>";
 
 		// If the ship is moving, abort the processing.
 		Vector dir1;
@@ -2479,50 +2774,45 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		if (!archtype.length())
 		{
 			PrintUserCmdText(client, L"ERR No archtype");
-			PrintUserCmdText(client, L"Usage: .jumpcreate <archtype> <loadout> <type> <dest system> <x> <y> <z> <affiliation> <name>");
+			PrintUserCmdText(client, usage.c_str());
 			return true;
 		}
 		wstring loadout = cmd->ArgStr(2);
 		if (!loadout.length())
 		{
 			PrintUserCmdText(client, L"ERR No loadout");
-			PrintUserCmdText(client, L"Usage: .jumpcreate <archtype> <loadout> <type> <dest system> <x> <y> <z> <affiliation> <name>");
+			PrintUserCmdText(client, usage.c_str());
 			return true;
 		}
 		wstring type = cmd->ArgStr(3);
 		if (!type.length())
 		{
 			PrintUserCmdText(client, L"ERR No type");
-			PrintUserCmdText(client, L"Usage: .jumpcreate <archtype> <loadout> <type> <dest system> <x> <y> <z> <affiliation> <name>");
+			PrintUserCmdText(client, usage.c_str());
 			return true;
 		}
-		wstring destsystem = cmd->ArgStr(4);
-		if (!destsystem.length())
+		wstring destobject = cmd->ArgStr(4);
+		if (!destobject.length())
 		{
-			PrintUserCmdText(client, L"ERR No destination system");
-			PrintUserCmdText(client, L"Usage: .jumpcreate <archtype> <loadout> <type> <dest system> <x> <y> <z> <affiliation> <name>");
+			PrintUserCmdText(client, L"ERR No destination object");
+			PrintUserCmdText(client, usage.c_str());
 			return true;
 		}
 
-		Vector destpos;
-		destpos.x = cmd->ArgFloat(5);
-		destpos.y = cmd->ArgFloat(6);
-		destpos.z = cmd->ArgFloat(7);
-
-		wstring theaffiliation = cmd->ArgStr(8);
+		wstring theaffiliation = cmd->ArgStr(5);
 		if (!theaffiliation.length())
 		{
 			PrintUserCmdText(client, L"ERR No affiliation");
-			PrintUserCmdText(client, L"Usage: .jumpcreate <archtype> <loadout> <type> <dest system> <x> <y> <z> <affiliation> <name>");
+			PrintUserCmdText(client, usage.c_str());
 			return true;
 		}
 
 
-		wstring basename = cmd->ArgStrToEnd(9);
+		wstring basename = cmd->ArgStrToEnd(6);
 		if (!basename.length())
 		{
 			PrintUserCmdText(client, L"ERR No name entered");
-			PrintUserCmdText(client, L"Usage: .jumpcreate <archtype> <loadout> <type> <dest system> <x> <y> <z> <affiliation> <name>");
+			PrintUserCmdText(client, usage.c_str());
 			return true;
 		}
 
@@ -2552,23 +2842,15 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		newbase->defense_mode = 4;
 		newbase->base_health = 10000000000;
 
-		newbase->destsystem = CreateID(wstos(destsystem).c_str());
-		newbase->destposition = destpos;
+		newbase->destObject = CreateID(wstos(destobject).c_str());
 
-		for (map<string, ARCHTYPE_STRUCT>::iterator iter = mapArchs.begin(); iter != mapArchs.end(); iter++)
-		{
-
-			ARCHTYPE_STRUCT &thearch = iter->second;
-			if (iter->first == newbase->basetype)
-			{
-				newbase->invulnerable = thearch.invulnerable;
-				newbase->logic = thearch.logic;
-				newbase->radius = thearch.radius;
-			}
-		}
+		newbase->invulnerable = mapArchs[newbase->basetype].invulnerable;
+		newbase->logic = mapArchs[newbase->basetype].logic;
 
 		newbase->Spawn();
 		newbase->Save();
+
+		HyperJump::InitJumpHoleConfig();
 
 		PrintUserCmdText(client, L"OK: Solar deployed");
 		//PrintUserCmdText(client, L"Default administration password is %s", password.c_str());
@@ -2662,17 +2944,10 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		newbase->baseloadout = wstos(loadout);
 		newbase->defense_mode = 2;
 		newbase->base_health = 10000000000;
+		newbase->isCrewSupplied = true;
 
-		for (map<string, ARCHTYPE_STRUCT>::iterator iter = mapArchs.begin(); iter != mapArchs.end(); iter++)
-		{
-
-			ARCHTYPE_STRUCT &thearch = iter->second;
-			if (iter->first == newbase->basetype)
-			{
-				newbase->invulnerable = thearch.invulnerable;
-				newbase->logic = thearch.logic;
-			}
-		}
+		newbase->invulnerable = mapArchs[newbase->basetype].invulnerable;
+		newbase->logic = mapArchs[newbase->basetype].logic;
 
 		newbase->Spawn();
 		newbase->Save();
@@ -2701,10 +2976,74 @@ bool ExecuteCommandString_Callback(CCmds* cmd, const wstring &args)
 		cmd->Print(L"OK base debug is off.\n");
 		return true;
 	}
+	else if (args.find(L"checkbasedistances") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
 
+		RIGHT_CHECK(RIGHT_BASES)
+
+
+		ConPrint(L"POB distance check for following settings:\n"
+			L"High Tier Mining: %um\n"
+			L"Planets: %um\n"
+			L"Solars: %um\n"
+			L"Trade Lanes: %um\n"
+			L"JH/JG: %um\n"
+			L"POBs: %um\n"
+			L"Other: %um\n",
+			static_cast<uint>(minMiningDistance),
+			static_cast<uint>(minPlanetDistance),
+			static_cast<uint>(minStationDistance),
+			static_cast<uint>(minLaneDistance),
+			static_cast<uint>(minJumpDistance),
+			static_cast<uint>(minOtherPOBDistance),
+			static_cast<uint>(minDistanceMisc));
+
+		for (const auto& base : player_bases)
+		{
+			if (base.second->basetype != "legacy" || base.second->invulnerable || !base.second->logic)
+			{
+				continue;
+			}
+
+			Vector& pos = base.second->position;
+			uint system = base.second->system;
+			if (!PlayerCommands::CheckSolarDistances(0, system, pos))
+			{
+				ConPrint(L" - %ls\n", base.second->basename.c_str());
+			}
+		}
+		return true;
+	}
+	else if (args.find(L"baselogin") == 0)
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+
+		RIGHT_CHECK(RIGHT_SUPERADMIN);
+		uint client = HkGetClientIdFromCharname(cmd->GetAdminName());
+		if (client == -1)
+		{
+			ConPrint(L"Only usable ingame\n");
+			return true;
+		}
+
+		PlayerBase* base = GetPlayerBaseForClient(client);
+		if (base)
+		{
+			clients[client].admin = true;
+		}
+
+		PrintUserCmdText(client, L"Logged in as admin");
+		return true;
+	}
 	return false;
 }
 
+void DelayedDisconnect(uint clientId, uint shipId)
+{
+	returncode = DEFAULT_RETURNCODE;
+	HyperJump::CheckForUnchartedDisconnect(clientId, shipId);
+}
 
 void Plugin_Communication_CallBack(PLUGIN_MESSAGE msg, void* data)
 {
@@ -2712,20 +3051,20 @@ void Plugin_Communication_CallBack(PLUGIN_MESSAGE msg, void* data)
 
 	if (msg == CUSTOM_BASE_BEAM)
 	{
-		CUSTOM_BASE_BEAM_STRUCT* info = reinterpret_cast<CUSTOM_BASE_BEAM_STRUCT*>(data); \
-			PlayerBase *base = GetPlayerBase(info->iTargetBaseID);
+		returncode = SKIPPLUGINS;
+		CUSTOM_BASE_BEAM_STRUCT* info = reinterpret_cast<CUSTOM_BASE_BEAM_STRUCT*>(data);
+		PlayerBase *base = GetPlayerBase(info->iTargetBaseID);
 		if (base)
 		{
-			returncode = SKIPPLUGINS;
 			ForcePlayerBaseDock(info->iClientID, base);
 			info->bBeamed = true;
 		}
 	}
 	if (msg == CUSTOM_IS_IT_POB)
 	{
+		returncode = SKIPPLUGINS;
 		CUSTOM_BASE_IS_IT_POB_STRUCT* info = reinterpret_cast<CUSTOM_BASE_IS_IT_POB_STRUCT*>(data);
 		PlayerBase *base = GetPlayerBase(info->iBase);
-		returncode = SKIPPLUGINS;
 		if (base)
 		{
 			info->bAnswer = true;
@@ -2733,22 +3072,12 @@ void Plugin_Communication_CallBack(PLUGIN_MESSAGE msg, void* data)
 	}
 	else if (msg == CUSTOM_BASE_IS_DOCKED)
 	{
+		returncode = SKIPPLUGINS;
 		CUSTOM_BASE_IS_DOCKED_STRUCT* info = reinterpret_cast<CUSTOM_BASE_IS_DOCKED_STRUCT*>(data);
 		PlayerBase *base = GetPlayerBaseForClient(info->iClientID);
 		if (base)
 		{
-			returncode = SKIPPLUGINS;
 			info->iDockedBaseID = base->base;
-		}
-	}
-	else if (msg == CUSTOM_BASE_LAST_DOCKED)
-	{
-		CUSTOM_BASE_LAST_DOCKED_STRUCT* info = reinterpret_cast<CUSTOM_BASE_LAST_DOCKED_STRUCT*>(data);
-		PlayerBase *base = GetLastPlayerBaseForClient(info->iClientID);
-		if (base)
-		{
-			returncode = SKIPPLUGINS;
-			info->iLastDockedBaseID = base->base;
 		}
 	}
 	else if (msg == CUSTOM_JUMP)
@@ -2762,7 +3091,8 @@ void Plugin_Communication_CallBack(PLUGIN_MESSAGE msg, void* data)
 		if (lastTransactionBase)
 		{
 			CUSTOM_REVERSE_TRANSACTION_STRUCT* info = reinterpret_cast<CUSTOM_REVERSE_TRANSACTION_STRUCT*>(data);
-			if (info->iClientID != lastTransactionClientID) {
+			if (info->iClientID != lastTransactionClientID)
+			{
 				ConPrint(L"base: CUSTOM_REVERSE_TRANSACTION: Something is very wrong! Expected client ID %d but got %d\n", lastTransactionClientID, info->iClientID);
 				return;
 			}
@@ -2778,7 +3108,75 @@ void Plugin_Communication_CallBack(PLUGIN_MESSAGE msg, void* data)
 			base->Save();
 		}
 	}
+	else if (msg == CUSTOM_BASE_LAST_DOCKED)
+	{
+		returncode = SKIPPLUGINS;
+		LAST_PLAYER_BASE_NAME_STRUCT* info = reinterpret_cast<LAST_PLAYER_BASE_NAME_STRUCT*>(data);
+		if (clients.count(info->clientID))
+		{
+			uint lastBaseID = clients[info->clientID].last_player_base;
+			if (player_bases.count(lastBaseID))
+			{
+				info->lastBaseName = player_bases[lastBaseID]->basename;
+			}
+			else
+			{
+				info->lastBaseName = L"Destroyed Player Base";
+			}
+		}
+		else
+		{
+			info->lastBaseName = L"Object Unknown";
+		}
+	}
+	else if (msg == CUSTOM_SPAWN_SOLAR)
+	{
+		returncode = SKIPPLUGINS;
+		SPAWN_SOLAR_STRUCT* info = reinterpret_cast<SPAWN_SOLAR_STRUCT*>(data);
+		CreateSolar::CreateSolarCallout(info);
+	}
+	else if (msg == CUSTOM_DESPAWN_SOLAR)
+	{
+		returncode = SKIPPLUGINS;
+		DESPAWN_SOLAR_STRUCT* info = reinterpret_cast<DESPAWN_SOLAR_STRUCT*>(data);
+		CreateSolar::DespawnSolarCallout(info);
+	}
+	else if (msg == CUSTOM_POB_DOCK_ALERT)
+	{
+		returncode = SKIPPLUGINS;
+		CUSTOM_POB_DOCK_ALERT_STRUCT* info = reinterpret_cast<CUSTOM_POB_DOCK_ALERT_STRUCT*>(data);
+		PlayerBase* pb = GetPlayerBaseForClient(info->client);
+		if (pb)
+		{
+			PrintLocalMsgAroundObject(CreateID(pb->nickname.c_str()), *info->msg, info->range);
+		}
+	}
 	return;
+}
+
+void AddFactoryRecipeToMaps(const RECIPE& recipe)
+{
+	wstring recipeNameKey = ToLower(recipe.infotext);
+	recipeMap[recipe.nickname] = recipe;
+	recipeCraftTypeNumberMap[recipe.craft_type][recipe.shortcut_number] = recipe;
+	recipeCraftTypeNameMap[recipe.craft_type][recipeNameKey] = recipe;
+}
+
+void AddModuleRecipeToMaps(const RECIPE& recipe, const vector<wstring> craft_types, const wstring& build_type, uint recipe_number)
+{
+	wstring recipeNameKey = ToLower(recipe.infotext);
+
+	for (const wstring& craftType : craft_types)
+	{
+		factoryNicknameToCraftTypeMap[recipe.nickname].emplace_back(ToLower(craftType));
+	}
+	recipeMap[recipe.nickname] = recipe;
+	moduleNameRecipeMap[recipeNameKey] = recipe;
+	if (!build_type.empty())
+	{
+		craftListNumberModuleMap[build_type][recipe_number] = recipe;
+		buildingCraftLists.insert(build_type);
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2792,75 +3190,50 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->bMayPause = true;
 	p_PI->bMayUnload = true;
 	p_PI->ePluginReturnCode = &returncode;
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&LoadSettings, PLUGIN_LoadSettings, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ClearClientInfo, PLUGIN_ClearClientInfo, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&CharacterSelect, PLUGIN_HkIServerImpl_CharacterSelect, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&RequestEvent, PLUGIN_HkIServerImpl_RequestEvent, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&LaunchPosHook, PLUGIN_LaunchPosHook, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&PlayerLaunch, PLUGIN_HkIServerImpl_PlayerLaunch, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&PlayerLaunch_AFTER, PLUGIN_HkIServerImpl_PlayerLaunch_AFTER, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&CharacterSelect_AFTER, PLUGIN_HkIServerImpl_CharacterSelect_AFTER, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&JumpInComplete, PLUGIN_HkIServerImpl_JumpInComplete, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&BaseEnter, PLUGIN_HkIServerImpl_BaseEnter, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&BaseExit, PLUGIN_HkIServerImpl_BaseExit, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Dock_Call, PLUGIN_HkCb_Dock_Call, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SystemSwitchOutComplete, PLUGIN_HkIServerImpl_SystemSwitchOutComplete, 0));
+  
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&Shutdown, PLUGIN_HkIServerImpl_Shutdown, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&LoadSettings, PLUGIN_LoadSettings, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ClearClientInfo, PLUGIN_ClearClientInfo, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&DelayedDisconnect, PLUGIN_DelayedDisconnect, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&CharacterSelect, PLUGIN_HkIServerImpl_CharacterSelect, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&RequestEvent, PLUGIN_HkIServerImpl_RequestEvent, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&LaunchPosHook, PLUGIN_LaunchPosHook, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&PlayerLaunch, PLUGIN_HkIServerImpl_PlayerLaunch, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&PlayerLaunch_AFTER, PLUGIN_HkIServerImpl_PlayerLaunch_AFTER, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&CharacterSelect_AFTER, PLUGIN_HkIServerImpl_CharacterSelect_AFTER, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&JumpInComplete, PLUGIN_HkIServerImpl_JumpInComplete, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&BaseEnter, PLUGIN_HkIServerImpl_BaseEnter, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&BaseExit, PLUGIN_HkIServerImpl_BaseExit, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&Dock_Call, PLUGIN_HkCb_Dock_Call, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&SetTarget, PLUGIN_HkIServerImpl_SetTarget, 0));
 
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodSell, PLUGIN_HkIServerImpl_GFGoodSell, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ReqRemoveItem, PLUGIN_HkIServerImpl_ReqRemoveItem, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ReqRemoveItem_AFTER, PLUGIN_HkIServerImpl_ReqRemoveItem_AFTER, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodBuy, PLUGIN_HkIServerImpl_GFGoodBuy, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodBuy_AFTER, PLUGIN_HkIServerImpl_GFGoodBuy_AFTER, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ReqAddItem, PLUGIN_HkIServerImpl_ReqAddItem, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ReqAddItem_AFTER, PLUGIN_HkIServerImpl_ReqAddItem_AFTER, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ReqChangeCash, PLUGIN_HkIServerImpl_ReqChangeCash, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ReqSetCash, PLUGIN_HkIServerImpl_ReqSetCash, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ReqEquipment, PLUGIN_HkIServerImpl_ReqEquipment, 11));
 
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodSell, PLUGIN_HkIServerImpl_GFGoodSell, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ReqRemoveItem, PLUGIN_HkIServerImpl_ReqRemoveItem, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ReqRemoveItem_AFTER, PLUGIN_HkIServerImpl_ReqRemoveItem_AFTER, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodBuy, PLUGIN_HkIServerImpl_GFGoodBuy, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodBuy_AFTER, PLUGIN_HkIServerImpl_GFGoodBuy_AFTER, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ReqAddItem, PLUGIN_HkIServerImpl_ReqAddItem, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ReqAddItem_AFTER, PLUGIN_HkIServerImpl_ReqAddItem_AFTER, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ReqChangeCash, PLUGIN_HkIServerImpl_ReqChangeCash, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ReqSetCash, PLUGIN_HkIServerImpl_ReqSetCash, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ReqEquipment, PLUGIN_HkIServerImpl_ReqEquipment, 11));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&HkTimerCheckKick, PLUGIN_HkTimerCheckKick, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
 
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkTimerCheckKick, PLUGIN_HkTimerCheckKick, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
-
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&CShip_destroy, PLUGIN_HkIEngine_CShip_destroy, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&BaseDestroyed, PLUGIN_BaseDestroyed, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkCb_AddDmgEntry, PLUGIN_HkCb_AddDmgEntry, 15));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Plugin_Communication_CallBack, PLUGIN_Plugin_Communication, 11));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&CShip_destroy, PLUGIN_HkIEngine_CShip_destroy, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&BaseDestroyed, PLUGIN_BaseDestroyed, 0));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&HkCb_AddDmgEntry, PLUGIN_SolarHullDmg, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&Plugin_Communication_CallBack, PLUGIN_Plugin_Communication, 11));
 	return p_PI;
 }
 
-void ResetAllBasesShieldStrength() {
-	for (map<uint, PlayerBase*>::iterator i = player_bases.begin(); i != player_bases.end(); ++i) {
-		i->second->shield_strength_multiplier = base_shield_strength;
-		i->second->damage_taken_since_last_threshold = 0;
+void ResetAllBasesShieldStrength()
+{
+	for (auto& i : player_bases)
+	{
+		i.second->shield_strength_multiplier = base_shield_strength;
+		i.second->damage_taken_since_last_threshold = 0;
 	}
-}
-
-//return value:
-// false = all bases vulnerable, true = invulnerable
-bool checkBaseVulnerabilityStatus() {
-
-	if (baseVulnerabilityWindows.empty()) {
-		return false;
-	}
-
-	time_t tNow = time(0);
-	struct tm *t = localtime(&tNow);
-	uint currHour = t->tm_hour;
-	// iterate over configured vulnerability periods to check if we're in one.
-	// - in case of timeStart < timeEnd, eg. 5-10, the base will be vulnerable between 5AM and 10AM.
-	// - in case of timeStart > timeEnd, eg. 23-2, the base will be vulnerable after 11PM or before 2AM.
-	for (list<BASE_VULNERABILITY_WINDOW>::iterator i = baseVulnerabilityWindows.begin(); i != baseVulnerabilityWindows.end(); ++i){
-		if((i->start < i->end 
-			&& i->start <= currHour && i->end > currHour)
-		|| (i->start > i->end
-			&& (i->start <= currHour || i->end > currHour))) {
-			// if bases are going vulnerable in this tick, reset their damage resistance to default
-			if (isGlobalBaseInvulnerabilityActive) {
-				ResetAllBasesShieldStrength();
-			}
-			return false;
-		}
-	}
-	return true;
 }

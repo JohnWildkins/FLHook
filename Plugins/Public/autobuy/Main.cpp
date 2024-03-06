@@ -18,11 +18,10 @@ using st6_malloc_t = void* (*)(size_t);
 using st6_free_t = void(*)(void*);
 IMPORT st6_malloc_t st6_malloc;
 IMPORT st6_free_t st6_free;
-#define ADDR_COMMON_VFTABLE_MINE 0x139C64
-#define ADDR_COMMON_VFTABLE_CM 0x139C90
-#define ADDR_COMMON_VFTABLE_GUN 0x139C38
 
 static int set_iPluginDebug = 0;
+static float hullRepairFactor = 0.33f;
+static float equipmentRepairFactor = 0.3f;
 
 /// A return code to indicate to FLHook if we want the hook processing to continue.
 PLUGIN_RETURNCODE returncode;
@@ -90,11 +89,15 @@ bool bPluginEnabled = true;
 
 void LoadSettings()
 {
+	//pull the repair factors directly from where the game uses it
+	hullRepairFactor = *(PFLOAT(DWORD(GetModuleHandleA("common.dll")) + 0x4A28));
+	equipmentRepairFactor = *(PFLOAT(DWORD(GetModuleHandleA("server.dll")) + 0x8AE7C));
 	returncode = DEFAULT_RETURNCODE;
 
 	//Load ammo limit data from FL
 	string File_Misc = "..\\data\\equipment\\misc_equip.ini";
 	string File_Weapon = "..\\data\\equipment\\weapon_equip.ini";
+	string File_Special = "..\\data\\equipment\\special_equip.ini";
 	string File_FLHook = "..\\exe\\flhook_plugins\\autobuy.cfg";
 	int iLoaded = 0;
 	int iLoaded2 = 0;
@@ -139,6 +142,90 @@ void LoadSettings()
 		{
 
 			if (ini.is_header("Munition"))
+			{
+				uint itemname;
+				int itemlimit;
+				bool valid = false;
+
+				while (ini.read_value())
+				{
+					if (ini.is_value("nickname"))
+					{
+						itemname = CreateID(ini.get_value_string(0));
+					}
+					else if (ini.is_value("ammo_limit"))
+					{
+						valid = true;
+						itemlimit = ini.get_value_int(0);
+					}
+				}
+
+				if (valid == true)
+				{
+					mapAmmolimits[itemname] = itemlimit;
+					++iLoaded;
+				}
+			}
+			else if (ini.is_header("Mine"))
+			{
+				uint itemname;
+				int itemlimit;
+				bool valid = false;
+
+				while (ini.read_value())
+				{
+					if (ini.is_value("nickname"))
+					{
+						itemname = CreateID(ini.get_value_string(0));
+					}
+					else if (ini.is_value("ammo_limit"))
+					{
+						valid = true;
+						itemlimit = ini.get_value_int(0);
+					}
+				}
+
+				if (valid == true)
+				{
+					mapAmmolimits[itemname] = itemlimit;
+					++iLoaded;
+				}
+			}
+		}
+		ini.close();
+	}
+
+	if (ini.open(File_Special.c_str(), false))
+	{
+		while (ini.read_header())
+		{
+
+			if (ini.is_header("Munition"))
+			{
+				uint itemname;
+				int itemlimit;
+				bool valid = false;
+
+				while (ini.read_value())
+				{
+					if (ini.is_value("nickname"))
+					{
+						itemname = CreateID(ini.get_value_string(0));
+					}
+					else if (ini.is_value("ammo_limit"))
+					{
+						valid = true;
+						itemlimit = ini.get_value_int(0);
+					}
+				}
+
+				if (valid == true)
+				{
+					mapAmmolimits[itemname] = itemlimit;
+					++iLoaded;
+				}
+			}
+			else if (ini.is_header("CounterMeasure"))
 			{
 				uint itemname;
 				int itemlimit;
@@ -515,28 +602,48 @@ void CheckforStackables(uint iClientID)
 
 void PlayerAutorepair(uint iClientID)
 {
-	// Magic factor of 0.33
-	int repairCost = (int)floor(Archetype::GetShip(Players[iClientID].iShipArchetype)->fHitPoints * (1 - Players[iClientID].fRelativeHealth) / 100 * 33);
+
+	const Archetype::Ship* shipArch = Archetype::GetShip(Players[iClientID].iShipArchetype);
+	int repairCost = (int)floor(shipArch->fHitPoints * (1.0f - Players[iClientID].fRelativeHealth) * hullRepairFactor);
 
 	set<ushort> eqToFix;
 	list<EquipDesc> &equip = Players[iClientID].equipDescList.equip;
 	for (list<EquipDesc>::iterator item = equip.begin(); item != equip.end(); item++)
 	{
-		if (!item->bMounted || item->fHealth == 1)
+		if (!item->bMounted || item->fHealth == 1.0f)
+		{
 			continue;
+		}
 
 		const GoodInfo *info = GoodList_get()->find_by_archetype(item->iArchID);
 		if (info == nullptr)
+		{
 			continue;
+		}
 
-		// Magic factor of 0.3
-		repairCost += (int)floor(info->fPrice * (1 - item->fHealth) / 10 * 3);
+		repairCost += (int)floor(info->fPrice * (1.0f - item->fHealth) * equipmentRepairFactor);
 		eqToFix.insert(item->sID);
 	}
 
+	auto& playerCollision = Players[iClientID].collisionGroupDesc;
+	bool repairColGrp = false;
+	if (!playerCollision.empty())
+	{
+		Archetype::CollisionGroup* cg = shipArch->collisiongroup;
+		for (auto& colGrp : playerCollision)
+		{
+			if (colGrp.health != 1.0f)
+			{
+				repairColGrp = true;
+				repairCost += static_cast<int>((1.0f - colGrp.health) * static_cast<float>(cg->hitPts) * hullRepairFactor);
+				colGrp.health = 1.0f;
+			}
+			cg = cg->next;
+		}
+	}
+
 	int iCash = 0;
-	wstring wscCharName = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
-	HkGetCash(wscCharName, iCash);
+	pub::Player::InspectCash(iClientID, iCash);
 
 	if (iCash < repairCost)
 	{
@@ -544,7 +651,15 @@ void PlayerAutorepair(uint iClientID)
 		return;
 	}
 
-	HkAddCash(wscCharName, -repairCost);
+	if (repairCost < 0)
+	{
+		PrintUserCmdText(iClientID, L"Auto-Buy(Repair): FAILED! Unknown error, staff has been notified. Please repair manually.");
+		wstring charName = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
+		AddLog("Autobuy error: %ls got negative repair value. Debug data: hp: %f, repairCost: %d\n", charName.c_str(), Players[iClientID].fRelativeHealth, repairCost);
+		return;
+	}
+
+	pub::Player::AdjustCash(iClientID, -repairCost);
 
 	if (!eqToFix.empty())
 	{
@@ -562,36 +677,34 @@ void PlayerAutorepair(uint iClientID)
 		st6::vector<EquipDesc> eqVector;
 		for (auto& eq : equip)
 		{
-			if(eq.bMounted)
+			if (eq.bMounted)
+			{
 				eq.fHealth = 1.0f;
+			}
 			eqVector.push_back(eq);
 		}
 
-		HookClient->Send_FLPACKET_SERVER_SETEQUIPMENT(iClientID, eqVector);
-	}
-
-	if (Players[iClientID].fRelativeHealth != 1)
-	{
-		GetClientInterface()->Send_FLPACKET_SERVER_SETHULLSTATUS(iClientID, 1);
-		Players[iClientID].fRelativeHealth = 1;
-	}
-
-	// Repair all collision groups.
-	if (!Players[iClientID].collisionGroupDesc.data.empty())
-	{
-		auto& playerCollision = Players[iClientID].collisionGroupDesc.data;
-		st6::list<XCollisionGroup> componentList;
-		for (auto& colGrp : playerCollision)
+		if (!eqVector.empty())
 		{
-			auto* newColGrp = reinterpret_cast<XCollisionGroup*>(colGrp.data);
-			newColGrp->fHealth = 1.0f;
-			componentList.push_back(*newColGrp);
+			HookClient->Send_FLPACKET_SERVER_SETEQUIPMENT(iClientID, eqVector);
 		}
-		HookClient->Send_FLPACKET_SERVER_SETCOLLISIONGROUPS(iClientID, componentList);
+	}
+
+	if (repairColGrp)
+	{
+		HookClient->Send_FLPACKET_SERVER_SETCOLLISIONGROUPS(iClientID, playerCollision);
+	}
+
+	if (Players[iClientID].fRelativeHealth < 1.0f)
+	{
+		Players[iClientID].fRelativeHealth = 1.0f;
+		HookClient->Send_FLPACKET_SERVER_SETHULLSTATUS(iClientID, 1.0f);
 	}
 
 	if (repairCost)
+	{
 		PrintUserCmdText(iClientID, L"Auto-Buy(Repair): Cost %s$", ToMoneyStr(repairCost).c_str());
+	}
 
 	return;
 }
@@ -685,10 +798,6 @@ void PlayerAutobuy(uint iClientID, uint iBaseID)
 				lstMounted.push_back(*it);
 		}
 
-		uint iVFTableMines = (uint)hModCommon + ADDR_COMMON_VFTABLE_MINE;
-		uint iVFTableCM = (uint)hModCommon + ADDR_COMMON_VFTABLE_CM;
-		uint iVFTableGun = (uint)hModCommon + ADDR_COMMON_VFTABLE_GUN;
-
 		map <uint, wstring> mapAutobuyFLHookExtras;
 		// check mounted equip
 		foreach(lstMounted, CARGO_INFO, it2)
@@ -776,18 +885,12 @@ void PlayerAutobuy(uint iClientID, uint iBaseID)
 	}
 
 	// search base in base-info list
-	BASE_INFO *bi = 0;
-	foreach(lstBases, BASE_INFO, it3)
+	const auto& baseIter = lstBases.find(iBaseID);
+	if (baseIter == lstBases.end())
 	{
-		if (it3->iBaseID == iBaseID)
-		{
-			bi = &(*it3);
-			break;
-		}
+		return;
 	}
-
-	if (!bi)
-		return; // base not found
+	BASE_INFO* bi = &baseIter->second;
 
 	int iCash;
 	HkGetCash(ARG_CLIENTID(iClientID), iCash);
@@ -903,7 +1006,7 @@ void __stdcall CharacterSelect_AFTER(struct CHARACTER_ID const &charId, unsigned
 
 void __stdcall BaseEnter_AFTER(unsigned int iBaseID, unsigned int iClientID)
 {
-	pub::Player::GetBase(iClientID, iBaseID);
+	returncode = DEFAULT_RETURNCODE;
 	PlayerAutobuy(iClientID, iBaseID);
 
 	if (mapAutobuyPlayerInfo[iClientID].bAutoRepair)
@@ -916,6 +1019,45 @@ void __stdcall PlayerLaunch_AFTER(unsigned int iShip, unsigned int iClientID)
 	CheckforStackables(iClientID);
 }
 
+bool SetShipArch(uint iClientID, uint ship)
+{
+	returncode = DEFAULT_RETURNCODE;
+
+	static uint botsArch = CreateID("ge_s_repair_01");
+	static uint battArch = CreateID("ge_s_battery_01");
+	const auto& shipData = Archetype::GetShip(ship);
+	int counter = 0;
+	for (const auto& eq : Players[iClientID].equipDescList.equip)
+	{
+		if (eq.iArchID == botsArch)
+		{
+			if (eq.iCount > shipData->iMaxNanobots)
+			{
+				uint botsToSell = eq.iCount - shipData->iMaxNanobots;
+				pub::Player::RemoveCargo(iClientID, eq.sID, botsToSell);
+				const GoodInfo* gi = GoodList::find_by_id(botsArch);
+				pub::Player::AdjustCash(iClientID, static_cast<int>(gi->fPrice * static_cast<float>(botsToSell)));
+			}
+			counter++;
+		}
+		else if (eq.iArchID == battArch)
+		{
+			if (eq.iCount > shipData->iMaxShieldBats)
+			{
+				uint battsToSell = eq.iCount - shipData->iMaxShieldBats;
+				pub::Player::RemoveCargo(iClientID, eq.sID, battsToSell);
+				const GoodInfo* gi = GoodList::find_by_id(battArch);
+				pub::Player::AdjustCash(iClientID, static_cast<int>(gi->fPrice * static_cast<float>(battsToSell)));
+			}
+			counter++;
+		}
+		if (counter == 2) // both bots and batts processed, early exit
+		{
+			break;
+		}
+	}
+	return true;
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Client command processing
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -931,6 +1073,7 @@ struct USERCMD
 
 USERCMD UserCmds[] =
 {
+	{ L"/ab", UserCmd_AutoBuy, L"Usage: /ab" },
 	{ L"/autobuy", UserCmd_AutoBuy, L"Usage: /autobuy" },
 	{ L"/autobuy*", UserCmd_AutoBuy, L"Usage: /autobuy" },
 };
@@ -995,6 +1138,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ClearClientInfo, PLUGIN_ClearClientInfo, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&PlayerLaunch_AFTER, PLUGIN_HkIServerImpl_PlayerLaunch_AFTER, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SetShipArch, PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_SETSHIPARCH, 0));
 
 	return p_PI;
 }

@@ -110,7 +110,7 @@ CAccount* HkGetAccountByClientID(uint iClientID)
 float HkDistance3D(Vector v1, Vector v2)
 {
 	float sq1 = v1.x - v2.x, sq2 = v1.y - v2.y, sq3 = v1.z - v2.z;
-	return sqrt(sq1*sq1 + sq2 * sq2 + sq3 * sq3);
+	return sqrtf(sq1*sq1 + sq2 * sq2 + sq3 * sq3);
 }
 
 // Calculate the distance between the two vectors
@@ -123,7 +123,7 @@ float HkDistance3DByShip(uint iShip1, uint iShip2)
 	Matrix m2;
 	pub::SpaceObj::GetLocation(iShip2, v2, m2);
 	float sq1 = v1.x - v2.x, sq2 = v1.y - v2.y, sq3 = v1.z - v2.z;
-	return sqrt(sq1*sq1 + sq2 * sq2 + sq3 * sq3);
+	return sqrtf(sq1*sq1 + sq2 * sq2 + sq3 * sq3);
 }
 
 bool HkSetEquip(uint iClientID, const list<EquipDesc>& equip)
@@ -337,7 +337,7 @@ HK_ERROR HkGetOnLineTime(const wstring &wscCharname, int &iSecs)
 	wstring wscFile;
 	HkGetCharFileName(wscCharname, wscFile);
 
-	string scCharFile = scAcctPath + wstos(wscDir) + "\\" + wstos(wscFile) + ".fl";
+	string scCharFile = scAcctPath + wstos(wscDir) + R"(\)" + wstos(wscFile) + ".fl";
 	if (HkIsEncoded(scCharFile))
 	{
 		string scCharFileNew = scCharFile + ".ini";
@@ -630,8 +630,6 @@ void HkRelocateClient(uint iClientID, Vector vDestination, Matrix mOrientation)
 
 void HkSaveChar(uint iClientID)
 {
-	BYTE patch[] = { (BYTE)'\x90', (BYTE)'\x90' };
-	WriteProcMem((char*)hModServer + 0x7EFA8, patch, sizeof(patch));
 	pub::Save(iClientID, 1);
 }
 
@@ -928,14 +926,110 @@ Vector MatrixToEuler(const Matrix& mat)
 Quaternion HkMatrixToQuaternion(Matrix m)
 {
 	Quaternion quaternion;
-	quaternion.w = sqrt(max(0, 1 + m.data[0][0] + m.data[1][1] + m.data[2][2])) / 2;
-	quaternion.x = sqrt(max(0, 1 + m.data[0][0] - m.data[1][1] - m.data[2][2])) / 2;
-	quaternion.y = sqrt(max(0, 1 - m.data[0][0] + m.data[1][1] - m.data[2][2])) / 2;
-	quaternion.z = sqrt(max(0, 1 - m.data[0][0] - m.data[1][1] + m.data[2][2])) / 2;
+	quaternion.w = sqrtf(max(0, 1 + m.data[0][0] + m.data[1][1] + m.data[2][2])) / 2;
+	quaternion.x = sqrtf(max(0, 1 + m.data[0][0] - m.data[1][1] - m.data[2][2])) / 2;
+	quaternion.y = sqrtf(max(0, 1 - m.data[0][0] + m.data[1][1] - m.data[2][2])) / 2;
+	quaternion.z = sqrtf(max(0, 1 - m.data[0][0] - m.data[1][1] + m.data[2][2])) / 2;
 	quaternion.x = (float)_copysign(quaternion.x, m.data[2][1] - m.data[1][2]);
 	quaternion.y = (float)_copysign(quaternion.y, m.data[0][2] - m.data[2][0]);
 	quaternion.z = (float)_copysign(quaternion.z, m.data[1][0] - m.data[0][1]);
 	return quaternion;
+}
+
+Matrix TransposeMatrix(Matrix& m)
+{
+	return { {
+		{m.data[0][0], m.data[1][0], m.data[2][0]},
+		{m.data[0][1], m.data[1][1], m.data[2][1]},
+		{m.data[0][2], m.data[1][2], m.data[2][2]}} };
+}
+
+float MatrixSubDeterminant(Matrix& m, uint row, uint col)
+{
+	float minorMatrix[4];
+	uint counter = 0;
+	for (int i = 0; i < 3; i++)
+	{
+		if (i == row)
+			continue;
+		for (int j = 0; j < 3; j++)
+		{
+			if (j == col)
+				continue;
+			minorMatrix[counter] = m.data[i][j];
+			counter++;
+		}
+	}
+	return m.data[row][col] * ( minorMatrix[0] * minorMatrix[3] - minorMatrix[1] * minorMatrix[2] );
+}
+
+Matrix MatrixDeterminateTable(Matrix& m)
+{
+	Matrix determinantTable;
+	for (int i = 0; i < 3; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			determinantTable.data[i][j] = MatrixSubDeterminant(m, i, j);
+		}
+	}
+	return determinantTable;
+}
+
+void MatrixCofactorsTable(Matrix& m)
+{
+	for (int i = 0; i < 3; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			if ((((i * 3) + j) % 2) != 0) {
+				m.data[i][j] *= -1;
+			}
+		}
+	}
+}
+
+void MultiplyMatrix(Matrix& m, float num)
+{
+	for (int i = 0; i < 3; i++)
+	{
+		for (int j = 0; j < 3; j++)
+		{
+			m.data[i][j] *= num;
+		}
+	}
+}
+
+Matrix InverseMatrix(Matrix& m1)
+{
+	float adjoint = MatrixSubDeterminant(m1, 0, 0) + MatrixSubDeterminant(m1, 0, 1) + MatrixSubDeterminant(m1, 0, 2);
+	float inverseAdjoint = 1 / adjoint;
+	Matrix transp = TransposeMatrix(m1);
+	Matrix determinantTable = MatrixDeterminateTable(transp);
+	MatrixCofactorsTable(determinantTable);
+	MultiplyMatrix(determinantTable, inverseAdjoint);
+
+	return determinantTable;
+}
+
+Vector VectorMatrixMultiply(Vector& v1, Matrix& m1)
+{
+	Vector ret;
+	ret.x = v1.x * m1.data[0][0] + v1.y * m1.data[0][1] + v1.z * m1.data[0][2];
+	ret.y = v1.x * m1.data[1][0] + v1.y * m1.data[1][1] + v1.z * m1.data[1][2];
+	ret.z = v1.x * m1.data[2][0] + v1.y * m1.data[2][1] + v1.z * m1.data[2][2];
+	return ret;
+}
+
+Vector NormalizeVector(Vector& v)
+{
+	float inverseMagnitude = 1 / sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+
+	Vector ret;
+	ret.x = v.x * inverseMagnitude;
+	ret.y = v.y * inverseMagnitude;
+	ret.z = v.z * inverseMagnitude;
+	return ret;
 }
 
 // Format a chat string in accordance with the receiver's preferences and send it. Will
@@ -977,10 +1071,24 @@ void FormatSendChat(uint iToClientID, const wstring &wscSender, const wstring &w
 	wstring wscTRADataFormat = wszFormatBuf;
 	const wstring wscTRADataSenderColor = L"FFFFFF"; // white
 
-	wstring wscXML = L"<TRA data=\"0x" + wscTRADataSenderColor + wscTRADataFormat +
+	wstring wscXML = L"";
+	wstring textToDisplay;
+
+	if (wscText.length() > 2 && wscText[0] == '/' && wscText[1] == '/')
+	{
+		wscXML += L"<TRA data=\"0x2222FF" + wscTRADataFormat +
+			L"\" mask=\"-1\"/><TEXT>" + L"[OOC] " + L"</TEXT>";
+		textToDisplay = XMLText(wscText.substr(2, wscText.length() - 2));
+	}
+	else
+	{
+		textToDisplay = XMLText(wscText);
+	}
+
+	wscXML += L"<TRA data=\"0x" + wscTRADataSenderColor + wscTRADataFormat +
 		L"\" mask=\"-1\"/><TEXT>" + XMLText(wscSender) + L": </TEXT>" +
 		L"<TRA data=\"0x" + wscTextColor + wscTRADataFormat +
-		L"\" mask=\"-1\"/><TEXT>" + XMLText(wscText) + L"</TEXT>";
+		L"\" mask=\"-1\"/><TEXT>" + textToDisplay + L"</TEXT>";
 
 	HkFMsg(iToClientID, wscXML);
 }
@@ -1012,42 +1120,49 @@ void ini_write_wstring(FILE *file, const string &parmname, wstring &in)
 }
 
 // Print message to all ships within the specific number of meters of the player.
-void PrintLocalUserCmdText(uint iClientID, const wstring &wscMsg, float fDistance)
+void PrintLocalMsgAroundObject(uint spaceObjId, const wstring &wscMsg, float fDistance)
 {
-	uint iShip;
-	pub::Player::GetShip(iClientID, iShip);
-
 	Vector pos;
 	Matrix rot;
-	pub::SpaceObj::GetLocation(iShip, pos, rot);
+	pub::SpaceObj::GetLocation(spaceObjId, pos, rot);
 
 	uint iSystem;
-	pub::Player::GetSystem(iClientID, iSystem);
+	pub::SpaceObj::GetSystem(spaceObjId, iSystem);
 
 	// For all players in system...
 	struct PlayerData *pPD = 0;
 	while (pPD = Players.traverse_active(pPD))
 	{
 		// Get the this player's current system and location in the system.
-		uint iClientID2 = HkGetClientIdFromPD(pPD);
-		uint iSystem2 = 0;
-		pub::Player::GetSystem(iClientID2, iSystem2);
-		if (iSystem != iSystem2)
+		const CShip* cship = ClientInfo[pPD->iOnlineID].cship;
+		if (!cship)
+		{
 			continue;
+		}
 
-		uint iShip2;
-		pub::Player::GetShip(iClientID2, iShip2);
+		if (iSystem != cship->system)
+		{
+			continue;
+		}
 
-		Vector pos2;
-		Matrix rot2;
-		pub::SpaceObj::GetLocation(iShip2, pos2, rot2);
+		const Vector& cshipPos = cship->vPos;
 
 		// Is player within the specified range of the sending char.
-		if (HkDistance3D(pos, pos2) > fDistance)
+		if (HkDistance3D(pos, cshipPos) > fDistance)
+		{
 			continue;
+		}
 
-		PrintUserCmdText(iClientID2, L"%s", wscMsg.c_str());
+		PrintUserCmdText(pPD->iOnlineID, L"%s", wscMsg.c_str());
 	}
+}
+
+void PrintLocalUserCmdText(uint iClientID, const wstring& wscMsg, float fDistance)
+{
+	uint iShip;
+	pub::Player::GetShip(iClientID, iShip);
+
+	PrintLocalMsgAroundObject(iShip, wscMsg, fDistance);
 }
 
 // Send a player to group message
@@ -1171,13 +1286,13 @@ __declspec(naked) void __stdcall HkLightFuse(IObjRW *ship, uint iFuseID, float f
 	}
 }
 
-__declspec(naked) void __stdcall HkUnLightFuse(IObjRW *ship, uint iFuseID, float fDunno)
+__declspec(naked) void __stdcall HkUnLightFuse(IObjRW *ship, uint iFuseID, float fDelay)
 {
 	__asm
 	{
 		mov ecx, [esp + 4]
 		lea eax, [esp + 8] //iFuseID
-		push[esp + 12] //fDunno
+		push[esp + 12] //fDelay
 		push 0 //SUBOBJ_ID_NONE
 		push eax //iFuseID
 		mov eax, [ecx]

@@ -41,10 +41,10 @@ double HkIClientImpl::CDPClientProxy__GetLinkSaturation(uint iClientID)
 	// ISERVER_LOGARG_UI(iClientID);
 
 	char *tmp;
-	WriteProcMem(&tmp, &Client, 4);
-	WriteProcMem(&Client, &OldClient, 4);
+	memcpy(&tmp, &Client, 4);
+	memcpy(&Client, &OldClient, 4);
 	double dRet = HookClient->CDPClientProxy__GetLinkSaturation(iClientID);
-	WriteProcMem(&Client, &tmp, 4);
+	memcpy(&Client, &tmp, 4);
 
 	return dRet;
 }
@@ -285,12 +285,12 @@ bool HkIClientImpl::Send_FLPACKET_COMMON_STOPTRADELANE(uint iClientID, uint iShi
 /**************************************************************************************************************
 **************************************************************************************************************/
 
-bool HkIClientImpl::Send_FLPACKET_COMMON_UPDATEOBJECT(uint iClientID, SSPObjUpdateInfo& pUpdate)
+bool HkIClientImpl::Send_FLPACKET_COMMON_UPDATEOBJECT(uint iClientID, SSPObjUpdateInfoSimple& pUpdate)
 {
 	//ISERVER_LOG();
 	//ISERVER_LOGARG_UI(iClientID);
 
-	CALL_PLUGINS(PLUGIN_HkIClientImpl_Send_FLPACKET_COMMON_UPDATEOBJECT, bool, __stdcall, (uint, SSPObjUpdateInfo&), (iClientID, pUpdate));
+	CALL_PLUGINS(PLUGIN_HkIClientImpl_Send_FLPACKET_COMMON_UPDATEOBJECT, bool, __stdcall, (uint, SSPObjUpdateInfoSimple&), (iClientID, pUpdate));
 
 	CALL_CLIENT_METHOD(Send_FLPACKET_COMMON_UPDATEOBJECT(iClientID, pUpdate));
 	return reinterpret_cast<bool>(vRet);
@@ -330,6 +330,8 @@ bool HkIClientImpl::Send_FLPACKET_SERVER_CHARACTERINFO(uint iClientID, FLPACKET_
 	ISERVER_LOG();
 	ISERVER_LOGARG_UI(iClientID);
 
+	ClientInfo[iClientID].iCharMenuEnterTime = time(0);
+
 	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_CHARACTERINFO(iClientID, pDunno));
 	return reinterpret_cast<bool>(vRet);
 }
@@ -361,12 +363,12 @@ bool HkIClientImpl::Send_FLPACKET_SERVER_CREATECOUNTER(uint iClientID, FLPACKET_
 /**************************************************************************************************************
 **************************************************************************************************************/
 
-bool HkIClientImpl::Send_FLPACKET_SERVER_CREATEGUIDED(uint iClientID, FLPACKET_CREATEGUIDED& createGuidedPacket)
+bool HkIClientImpl::Send_FLPACKET_SERVER_CREATEGUIDED(uint& iClientID, FLPACKET_CREATEGUIDED& createGuidedPacket)
 {
 	ISERVER_LOG();
 	ISERVER_LOGARG_UI(iClientID);
 
-	CALL_PLUGINS(PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_CREATEGUIDED, bool, __stdcall, (uint, FLPACKET_CREATEGUIDED&), (iClientID, createGuidedPacket));
+	CALL_PLUGINS(PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_CREATEGUIDED, bool, __stdcall, (uint&, FLPACKET_CREATEGUIDED&), (iClientID, createGuidedPacket));
 
 	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_CREATEGUIDED(iClientID, createGuidedPacket));
 	return reinterpret_cast<bool>(vRet);
@@ -652,6 +654,8 @@ bool HkIClientImpl::Send_FLPACKET_SERVER_LAND(uint iClientID, FLPACKET_LAND& pLa
 	ISERVER_LOG();
 	ISERVER_LOGARG_UI(iClientID);
 
+	CALL_PLUGINS(PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_LAND, bool, __stdcall, (uint, FLPACKET_LAND&), (iClientID, pLand));
+
 	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_LAND(iClientID, pLand));
 	return reinterpret_cast<bool>(vRet);
 }
@@ -928,7 +932,7 @@ bool HkIClientImpl::Send_FLPACKET_SERVER_SETCASH(uint iClientID, uint iCash)
 /**************************************************************************************************************
 **************************************************************************************************************/
 
-bool HkIClientImpl::Send_FLPACKET_SERVER_SETCOLLISIONGROUPS(uint iClientID, st6::list<XCollisionGroup>& collisionGrpList)
+bool HkIClientImpl::Send_FLPACKET_SERVER_SETCOLLISIONGROUPS(uint iClientID, st6::list<CollisionGroupDesc>& collisionGrpList)
 {
 	ISERVER_LOG();
 	ISERVER_LOGARG_UI(iClientID);
@@ -993,6 +997,8 @@ bool HkIClientImpl::Send_FLPACKET_SERVER_SETSHIPARCH(uint iClientID, uint iShipA
 	ISERVER_LOG();
 	ISERVER_LOGARG_UI(iClientID);
 
+	CALL_PLUGINS(PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_SETSHIPARCH, bool, , (uint, uint), (iClientID, iShipArch));
+
 	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_SETSHIPARCH(iClientID, iShipArch));
 	return reinterpret_cast<bool>(vRet);
 }
@@ -1025,24 +1031,26 @@ bool HkIClientImpl::Send_FLPACKET_SERVER_GFDESTROYCHARACTER(uint iClientID, uint
 /**************************************************************************************************************
 **************************************************************************************************************/
 
-bool HkIClientImpl::Send_FLPACKET_SERVER_SYSTEM_SWITCH_IN(uint iClientID, FLPACKET_UNKNOWN &pDunno)
+bool HkIClientImpl::Send_FLPACKET_SERVER_SYSTEM_SWITCH_IN(uint iClientID, FLPACKET_SYSTEM_SWITCH_IN &switchInPacket)
 {
 	ISERVER_LOG();
 	ISERVER_LOGARG_UI(iClientID);
 
-	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_SYSTEM_SWITCH_IN(iClientID, pDunno));
+	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_SYSTEM_SWITCH_IN(iClientID, switchInPacket));
 	return reinterpret_cast<bool>(vRet);
 }
 
 /**************************************************************************************************************
 **************************************************************************************************************/
 
-bool HkIClientImpl::Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT(uint iClientID, FLPACKET_UNKNOWN &pDunno)
+bool HkIClientImpl::Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT(uint iClientID, FLPACKET_SYSTEM_SWITCH_OUT &switchOutPacket)
 {
 	ISERVER_LOG();
 	ISERVER_LOGARG_UI(iClientID);
 
-	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT(iClientID, pDunno));
+	CALL_PLUGINS(PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT, bool, __stdcall, (uint, FLPACKET_SYSTEM_SWITCH_OUT&), (iClientID, switchOutPacket));
+
+	CALL_CLIENT_METHOD(Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT(iClientID, switchOutPacket));
 	return reinterpret_cast<bool>(vRet);
 }
 
@@ -1105,7 +1113,7 @@ bool HkIClientImpl::Startup(uint iDunno, uint iDunno2)
 
 		bi.scBasename = szBaseName;
 		bi.iBaseID = CreateID(szBaseName);
-		lstBases.push_back(bi);
+		lstBases[bi.iBaseID] = bi;
 		pub::System::LoadSystem(base->iSystemID);
 
 		base = Universe::GetNextBase();

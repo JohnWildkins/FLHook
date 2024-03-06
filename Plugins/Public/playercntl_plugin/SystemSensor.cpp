@@ -149,74 +149,78 @@ namespace SystemSensor
 			PrintUserCmdText(iClientID, L"3rr 0u7d473d 50f7w4r3");
 			return false;
 		}
+		
+		wstring wscTargetCharname;
+		wstring param = GetParam(wscParam, ' ', 0);
+		if (!param.empty() && param.length() <= 3)
+		{
+			wchar_t* wszTargetCharname = (wchar_t*)Players.GetActiveCharacterName(ToInt(param));
+			if (wszTargetCharname)
+			{
+				wscTargetCharname = wszTargetCharname;
+			}
+		}
 		else
 		{
+			wscTargetCharname = param;
+		}
 
-			wstring wscTargetCharname = GetParam(wscParam, ' ', 0);
-			if (wscCmd.find(L"/showscan$ ") == 0 || wscCmd.find(L"/scanid ") == 0)
-			{
-				wchar_t *wszTargetCharname = (wchar_t*)Players.GetActiveCharacterName(ToInt(wscTargetCharname));
-				if (wszTargetCharname)
-					wscTargetCharname = wszTargetCharname;
-			}
+		if (wscTargetCharname.size() == 0)
+		{
+			PrintUserCmdText(iClientID, L"ERR Invalid parameters");
+			PrintUserCmdText(iClientID, usage);
+			return true;
+		}
 
-			if (wscTargetCharname.size() == 0)
-			{
-				PrintUserCmdText(iClientID, L"ERR Invalid parameters");
-				PrintUserCmdText(iClientID, usage);
-				return true;
-			}
+		uint iTargetClientID = HkGetClientIDFromArg(wscTargetCharname);
+		if (iTargetClientID == -1)
+		{
+			PrintUserCmdText(iClientID, L"ERR Target not found");
+			return true;
+		}
 
-			uint iTargetClientID = HkGetClientIDFromArg(wscTargetCharname);
-			if (iTargetClientID == -1)
-			{
-				PrintUserCmdText(iClientID, L"ERR Target not found");
-				return true;
-			}
+		map<uint, INFO>::iterator iterTargetClientID = mapInfo.find(iTargetClientID);
+		if (iterTargetClientID == mapInfo.end()
+			|| !mapInfo[iClientID].iAvailableNetworkID
+			|| !iterTargetClientID->second.iLastScanNetworkID
+			|| mapInfo[iClientID].iAvailableNetworkID != iterTargetClientID->second.iLastScanNetworkID)
+		{
+			PrintUserCmdText(iClientID, L"ERR Scan data not available");
+			return true;
+		}
 
-			map<uint, INFO>::iterator iterTargetClientID = mapInfo.find(iTargetClientID);
-			if (iterTargetClientID == mapInfo.end()
-				|| !mapInfo[iClientID].iAvailableNetworkID
-				|| !iterTargetClientID->second.iLastScanNetworkID
-				|| mapInfo[iClientID].iAvailableNetworkID != iterTargetClientID->second.iLastScanNetworkID)
+		wstring wscEqList;
+		foreach(iterTargetClientID->second.lstLastScan, CARGO_INFO, ci)
+		{
+			string scHardpoint = ci->hardpoint.value;
+			if (scHardpoint.length())
 			{
-				PrintUserCmdText(iClientID, L"ERR Scan data not available");
-				return true;
-			}
-
-			wstring wscEqList;
-			foreach(iterTargetClientID->second.lstLastScan, CARGO_INFO, ci)
-			{
-				string scHardpoint = ci->hardpoint.value;
-				if (scHardpoint.length())
+				Archetype::Equipment *eq = Archetype::GetEquipment(ci->iArchID);
+				if (eq && eq->iIdsName)
 				{
-					Archetype::Equipment *eq = Archetype::GetEquipment(ci->iArchID);
-					if (eq && eq->iIdsName)
+					wstring wscResult;
+					switch (HkGetEqType(eq))
 					{
-						wstring wscResult;
-						switch (HkGetEqType(eq))
-						{
-						case ET_GUN:
-						case ET_MISSILE:
-						case ET_CD:
-						case ET_CM:
-						case ET_TORPEDO:
-						case ET_OTHER:
-							if (wscEqList.length())
-								wscEqList += L",";
-							wscResult = HkGetWStringFromIDS(eq->iIdsName);
-							wscEqList += wscResult;
-							break;
-						default:
-							break;
-						}
+					case ET_GUN:
+					case ET_MISSILE:
+					case ET_CD:
+					case ET_CM:
+					case ET_TORPEDO:
+					case ET_OTHER:
+						if (wscEqList.length())
+							wscEqList += L",";
+						wscResult = HkGetWStringFromIDS(eq->iIdsName);
+						wscEqList += wscResult;
+						break;
+					default:
+						break;
 					}
 				}
 			}
-			PrintUserCmdText(iClientID, L"%s", wscEqList.c_str());
-			PrintUserCmdText(iClientID, L"OK");
-			return true;
 		}
+		PrintUserCmdText(iClientID, L"%s", wscEqList.c_str());
+		PrintUserCmdText(iClientID, L"OK");
+		return true;
 	}
 
 	void ClearClientInfo(uint iClientID)
@@ -337,21 +341,15 @@ namespace SystemSensor
 	}
 
 	// Record jump type.
-	void Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget, int iCancel, enum DOCK_HOST_RESPONSE response)
+	void Dock_Call(uint const &typeID, uint clientId)
 	{
-		uint iClientID = HkGetClientIDByShip(iShip);
-		if (iClientID && (response == PROCEED_DOCK || response == DOCK) && !iCancel)
+		if (typeID == JumpGate)
 		{
-			uint iTypeID;
-			pub::SpaceObj::GetType(iDockTarget, iTypeID);
-			if (iTypeID == OBJ_JUMP_GATE)
-			{
-				mapInfo[iClientID].bInJumpGate = true;
-			}
-			else
-			{
-				mapInfo[iClientID].bInJumpGate = false;
-			}
+			mapInfo[clientId].bInJumpGate = true;
+		}
+		else
+		{
+			mapInfo[clientId].bInJumpGate = false;
 		}
 	}
 

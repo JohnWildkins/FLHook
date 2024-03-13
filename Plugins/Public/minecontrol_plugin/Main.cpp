@@ -68,8 +68,28 @@ struct MiningNodeInfo {
 	uint countMax;
 };
 
+struct MiningArchetype
+{
+	uint archetype;
+	uint loadout;
+};
+
+struct MiningSpawnPointDB {
+	uint system;
+	string miningNodeGroupName;
+	vector<Vector> positions;
+	vector<MiningArchetype> nodeArchetypes;
+	uint nodeIDS;
+	uint respawnCD;
+	uint cdProgress = 0;
+	uint maxSpawnCount;
+	uint spawnedNodesCount = 0;
+};
+
 unordered_map<uint, map<uint, float>> idBonusMap;
 unordered_map<uint, array<MiningNodeInfo, 32>> miningSolarMap;
+vector<MiningSpawnPointDB> miningDB;
+unordered_map<uint, MiningSpawnPointDB*> miningNodeMap;
 
 struct ZONE_BONUS
 {
@@ -204,6 +224,34 @@ void DestroyContainer(const uint clientID)
 	}
 }
 
+void SpawnNode(MiningSpawnPointDB& ms, uint timestamp)
+{
+	int selectedPositionIndex = rand() % ms.positions.size();
+	int selectedArchetypeIndex = rand() % ms.nodeArchetypes.size();
+
+	Vector eulerRotation;
+	eulerRotation.x = (rand() % 360) - 180;
+	eulerRotation.y = (rand() % 360) - 180;
+	eulerRotation.z = (rand() % 360) - 180;
+	
+	SPAWN_SOLAR_STRUCT info;
+	info.nickname = "mining_node_" + ms.miningNodeGroupName + "_" + itos(timestamp);
+	info.solarArchetypeId = ms.nodeArchetypes[selectedArchetypeIndex].archetype;
+	info.loadoutArchetypeId = ms.nodeArchetypes[selectedArchetypeIndex].loadout;
+	info.iSystemId = ms.system;
+	info.pos = ms.positions[selectedPositionIndex];
+	info.ori = EulerMatrix(eulerRotation);
+	info.solar_ids = ms.nodeIDS;
+
+	Plugin_Communication(CUSTOM_SPAWN_SOLAR, &info);
+
+	ms.spawnedNodesCount++;
+	ms.positions.erase(ms.positions.begin() + selectedPositionIndex);
+
+	miningNodeMap[info.iSpaceObjId] = &ms;
+	ms.cdProgress = 0;
+}
+
 EXPORT void HkTimerCheckKick()
 {
 	returncode = DEFAULT_RETURNCODE;
@@ -247,6 +295,19 @@ EXPORT void HkTimerCheckKick()
 		if (file)
 		{
 			fclose(file);
+		}
+	}
+
+	for (auto& entry : miningDB)
+	{
+		if (entry.spawnedNodesCount >= entry.maxSpawnCount)
+		{
+			continue;
+		}
+
+		if (++entry.cdProgress >= entry.respawnCD)
+		{
+			SpawnNode(entry, currTime);
 		}
 	}
 }
@@ -398,7 +459,7 @@ EXPORT void LoadSettings()
 	// Read the last saved zone reserve.
 	char szDataPath[MAX_PATH];
 	GetUserDataPath(szDataPath);
-	string scStatsPath = string(szDataPath) + "\\Accts\\MultiPlayer\\mining_stats.txt";
+	string scStatsPath = string(szDataPath) + R"(\Accts\MultiPlayer\mining_stats.txt)";
 	if (ini.open(scStatsPath.c_str(), false))
 	{
 		while (ini.read_header())
@@ -421,6 +482,61 @@ EXPORT void LoadSettings()
 			}
 		}
 		ini.close();
+	}
+
+	string miningDatabaseCfg = string(szCurDir) + R"(\flhook_plugins\minecontrol_nodes.cfg)";
+	if (ini.open(miningDatabaseCfg.c_str(), false))
+	{
+		while (ini.read_header())
+		{
+			if (!ini.is_header("MiningSystem"))
+			{
+				continue;
+			}
+
+			MiningSpawnPointDB miningDBEntry;
+
+			while (ini.read_value())
+			{
+				if (ini.is_value("position"))
+				{
+					miningDBEntry.positions.push_back({ ini.get_value_float(0) ,ini.get_value_float(1) ,ini.get_value_float(2) });
+				}
+				else if (ini.is_value("system"))
+				{
+					miningDBEntry.system = CreateID(ini.get_value_string());
+				}
+				else if (ini.is_value("max_spawn_count"))
+				{
+					miningDBEntry.maxSpawnCount = ini.get_value_int(0);
+				}
+				else if (ini.is_value("respawn_cooldown"))
+				{
+					miningDBEntry.respawnCD = ini.get_value_int(0);
+				}
+				else if (ini.is_value("node_archetype"))
+				{
+					miningDBEntry.nodeArchetypes.push_back({ CreateID(ini.get_value_string(0)), CreateID(ini.get_value_string(1)) });
+				}
+				else if (ini.is_value("name"))
+				{
+					miningDBEntry.miningNodeGroupName = ini.get_value_string();
+				}
+				else if (ini.is_value("node_ids"))
+				{
+					miningDBEntry.nodeIDS = ini.get_value_int(0);
+				}
+			}
+
+			if (miningDBEntry.maxSpawnCount > miningDBEntry.positions.size())
+			{
+				AddLog("ERROR: INCORRECT MINING NODE CONFIG FOR NODE SYSTEM %s\n", miningDBEntry.miningNodeGroupName.c_str());
+				ConPrint(L"ERROR: INCORRECT MINING NODE CONFIG FOR NODE SYSTEM %ls\n", stows(miningDBEntry.miningNodeGroupName).c_str());
+				continue;
+			}
+
+			miningDB.emplace_back(miningDBEntry);
+		}
 	}
 
 	struct PlayerData *pPD = 0;
@@ -932,6 +1048,15 @@ void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 		}
 		Server.MineAsteroid(cd.systemId, cd.jettisonPos, set_containerLootCrateID, set_deployableContainerCommodity, 1, cd.clientId);
 		mapMiningContainers.erase(space_obj);
+
+		return;
+	}
+	if (miningNodeMap.count(space_obj))
+	{
+		auto& nodeDb = miningNodeMap.at(space_obj);
+		nodeDb->spawnedNodesCount--;
+		nodeDb->positions.push_back(iobj->cobj->vPos);
+		miningNodeMap.erase(space_obj);
 	}
 }
 

@@ -368,71 +368,73 @@ struct CollisionGroupDescList
 	st6::list<CollisionGroupDesc> data;
 };
 
-struct FLString
+struct CHARACTER_ID
 {
-	// std::string
-	UINT iDunno1;
-	char *value;
-	UINT iDunno2[14];
+	CHARACTER_ID(void);
+	struct CHARACTER_ID const& operator=(struct CHARACTER_ID const&);
+	void invalidate(void);
+	bool is_valid(void)const;
+
+public:
+	char charFilename[512];
 };
 
 struct PlayerData {
-	long x000, x004, x008, x00C, x010, x014, x018, x01C, x020, x024, x028, x02C, x030, x034, x038, x03C;
-	long x040, x044, x048, x04C, x050, x054, x058, x05C, x060, x064, x068, x06C, x070, x074, x078, x07C;
-	long x080, x084, x088, x08C, x090, x094, x098, x09C, x0A0, x0A4, x0A8, x0AC, x0B0, x0B4, x0B8, x0BC;
-	long x0C0, x0C4, x0C8, x0CC, x0D0, x0D4, x0D8, x0DC, x0E0, x0E4, x0E8, x0EC, x0F0, x0F4, x0F8, x0FC;
-	long x100, x104, x108, x10C, x110, x114, x118, x11C, x120, x124, x128, x12C, x130, x134, x138, x13C;
-	long x140, x144, x148, x14C, x150, x154, x158, x15C, x160, x164, x168, x16C, x170, x174, x178, x17C;
-	long x180, x184, x188, x18C, x190, x194, x198, x19C, x1A0, x1A4, x1A8, x1AC, x1B0, x1B4, x1B8, x1BC;
-	long x1C0, x1C4, x1C8, x1CC, x1D0, x1D4, x1D8, x1DC, x1E0, x1E4, x1E8, x1EC, x1F0, x1F4, x1F8, x1FC;
-	long x200, x204, x208, x20C, x210, x214, x218, x21C, x220, x224, x228, x22C, x230, x234, x238, x23C;
-	long x240, x244, x248, x24C, x250, x254, x258, x25C, x260;
+	wchar_t accId[40];
+	long x050, x054, x058, x05C;
+	uint numberOfCharacters;
+	CHARACTER_ID charFile;
 	uint iShipArchetype;
 	float fRelativeHealth;
 	st6::list<CollisionGroupDesc> collisionGroupDesc;
 	EquipDescList equipDescList;
 	int iRank;
 	int iMoneyNeededToNextRank;
-	long x28C, x290, x294, x298, x29C, x2A0, x2A4, x2A8, x2AC, x2B0, x2B4, x2B8, x2BC;
-	long x2C0, x2C4, x2C8, x2CC, x2D0, x2D4, x2D8, x2DC, x2E0;
-	uint iHead;
-	uint iBody;
-	uint iLeftHand;
-	uint iRightHand;
-	long x2F4, x2F8, x2FC;
-	long x300, x304, x308, x30C, x310, x314;
+	Costume commCostume;
+	uint voiceLen;
+	char voice[32];
+	Costume baseCostume;
 	uint iReputation;
 	int iInspectCash;
-	int iCyclicRedundancyCheck;
-	long x324;
+	int worth;
+	uint shipArchetypeWhenLanding;
 	EquipDescList lShadowEquipDescList;
 	int iNumKills;
 	int iNumMissionSuccesses;
 	int iNumMissionFailures;
-	long x340, x344;
+	bool skipAutoSave;
+	uint saveCount;
 	uint iOnlineID;
-	long x34C;
+	bool cheated;
 	Vector vPosition;
 	Matrix mOrientation;
-	FLString weaponGroup; // 0x10 bytes
-	long x3C0, x3C4;
-	ushort LastEquipID;
-	ushort x3CA;
+	st6::string weaponGroups;
+	uint dunno1[2];
+	int* SPNeuralNetLogUnk;
+	int interfaceState;
+	uint visitEntriesBST[5];
+	//BinarySearchTree<VisitEntry> visitEntries;
+	uint dunno2[4]; // last one seems to always be zero
+	float difficulty;
+	ushort lastEquipId;
 	uint aMenuItem;
-	long x3D0, x3D4, x3D8, x3DC;
+	uint onlineId2;
+	uint dunno3[2];
+	uint tradeRequestCount;
 	uint iSystemID;
 	uint iShipID;
-	long x3E8;
+	uint createdShipId;
 	uint iBaseID;
 	uint iLastBaseID;
-	long x3F4;
+	uint enteredBase;
 	uint iBaseRoomID;
 	uint iCharacterID;
 	class CAccount* Account;
 	class CPlayerGroup* PlayerGroup;
 	uint iMissionID;
 	uint iMissionSetBy;
-	long x410, x414;
+	uint exitedBase;
+	uint unknownLocId;
 };
 
 struct SCreateCharacterInfo
@@ -454,17 +456,6 @@ struct SStartupInfo
 struct SLoginInfo
 {
 	wchar_t wszAccount[36];
-};
-
-struct CHARACTER_ID
-{
-	CHARACTER_ID(void);
-	struct CHARACTER_ID const & operator=(struct CHARACTER_ID const &);
-	void invalidate(void);
-	bool is_valid(void)const;
-
-public:
-	char szCharFilename[15];
 };
 
 struct PlayerDBTreeNode

@@ -110,7 +110,6 @@ bool SetupCustomExitHole(PlayerBase* pb, SYSTEMJUMPCOORDS& coords, uint exitJump
 	solar->jumpDestObj = pb->destObject;
 
 	customSolarList.insert(info.iSpaceObjId);
-	AddLog("ReturnJH to %s created\n", ((string)systemInfo->nickname).c_str());
 	return true;
 }
 

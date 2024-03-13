@@ -1131,7 +1131,7 @@ bool Rename::DestroyCharacter(struct CHARACTER_ID const &cId, unsigned int iClie
 	GetUserDataPath(szDataPath);
 	string scAcctPath = string(szDataPath) + "\\Accts\\MultiPlayer\\";
 
-	wstring file = stows(cId.szCharFilename);
+	wstring file = stows(cId.charFilename);
 	// Get the character name for this connection.
 	//wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
 

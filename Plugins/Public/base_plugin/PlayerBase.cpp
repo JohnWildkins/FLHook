@@ -51,11 +51,11 @@ PlayerBase::PlayerBase(const string &the_path)
 
 PlayerBase::~PlayerBase()
 {
-	for (vector<Module*>::iterator i = modules.begin(); i != modules.end(); ++i)
+	for (auto module : modules)
 	{
-		if (*i)
+		if (module)
 		{
-			delete* i;
+			delete module;
 		}
 	}
 }
@@ -853,7 +853,7 @@ void ReportAttack(wstring basename, wstring charname, uint system, wstring alert
 }
 
 // Return true if 
-void PlayerBase::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints)
+void PlayerBase::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float incoming_damage)
 {
 	if (invulnerable)
 	{
@@ -874,5 +874,5 @@ void PlayerBase::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float
 		ReportAttack(this->basename, charname, this->system);
 	}
 
-	damageTakenMap[charname] += curr_hitpoints - new_hitpoints;
+	damageTakenMap[charname] += incoming_damage;
 }

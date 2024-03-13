@@ -46,6 +46,7 @@ struct DOCKEDCRAFTINFO
 {
 	wstring carrierName;
 	uint lastDockedSolar;
+	bool jettisoned;
 };
 
 void SendResetMarketOverride(uint client);

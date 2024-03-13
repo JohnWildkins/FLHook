@@ -34,6 +34,9 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Base Plugin", "Plugins\Public\base_plugin\Base Plugin.vc14.vcxproj", "{81D35B95-1CDD-4F58-A24C-E2EC47D43DD0}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cloak Plugin", "Plugins\Public\cloak_plugin\Cloak Plugin.vc14.vcxproj", "{81A35B95-1CED-4F58-A24C-E2DC47D43DD0}"
+	ProjectSection(ProjectDependencies) = postProject
+		{81D33B95-1DDD-4F58-A24C-E2EC4A143DD0} = {81D33B95-1DDD-4F58-A24C-E2EC4A143DD0}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CommodityLimit", "Plugins\Public\commoditylimit\CommodityLimit.vcxproj", "{E7DFB061-5E6A-47DC-94C5-CCB169EA410A}"
 EndProject
@@ -44,8 +47,14 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "JSONBuddy", "Plugins\Public\JSONBuddy\JSONBuddy.vcxproj", "{097BFFBB-2BBE-4E16-B2FB-3ED8E90ECBD7}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MarketFucker", "Plugins\Public\MarketFucker\MarketFucker.vcxproj", "{9ED72C7D-81FC-49F5-8709-0AB542113D3F}"
+	ProjectSection(ProjectDependencies) = postProject
+		{81D33B95-1DDD-4F58-A24C-E2EC4A143DD0} = {81D33B95-1DDD-4F58-A24C-E2EC4A143DD0}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MiningControl Plugin", "Plugins\Public\minecontrol_plugin\MineControl Plugin.vc14.vcxproj", "{367D5EDC-F360-49E0-B652-587B9E22CF6C}"
+	ProjectSection(ProjectDependencies) = postProject
+		{81D33B95-1DDD-4F58-A24C-E2EC4A143DD0} = {81D33B95-1DDD-4F58-A24C-E2EC4A143DD0}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MobileDocking Plugin", "Plugins\Public\mobiledocking_plugin\MobileDocking Plugin.vc14.vcxproj", "{81A35B95-1CDD-4F58-A24C-E2DC47D43DD0}"
 EndProject
@@ -99,6 +108,11 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DSAceSrv Plugin", "Plugins\Public\dsacesrv_discovery\dsace_plugin.vcxproj", "{209E8482-B6B8-4CF8-B117-B93BE1B9E72D}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BountyScan", "Plugins\Public\bountyscan\BountyScan.vcxproj", "{985915AF-E158-45E7-BBDD-BCD4642E5574}"
+	ProjectSection(ProjectDependencies) = postProject
+		{81D33B95-1DDD-4F58-A24C-E2EC4A143DD0} = {81D33B95-1DDD-4F58-A24C-E2EC4A143DD0}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Voice_mgr", "Plugins\Public\voice_mgr\voice_mgr.vcxproj", "{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}"
 	ProjectSection(ProjectDependencies) = postProject
 		{81D33B95-1DDD-4F58-A24C-E2EC4A143DD0} = {81D33B95-1DDD-4F58-A24C-E2EC4A143DD0}
 	EndProjectSection
@@ -413,6 +427,18 @@ Global
 		{985915AF-E158-45E7-BBDD-BCD4642E5574}.Release|Win32.Build.0 = Release|Win32
 		{985915AF-E158-45E7-BBDD-BCD4642E5574}.Release|x64.ActiveCfg = Release|Win32
 		{985915AF-E158-45E7-BBDD-BCD4642E5574}.Release|x64.Build.0 = Release|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Debug|Win32.ActiveCfg = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Debug|Win32.Build.0 = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Debug|x64.ActiveCfg = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Debug|x64.Build.0 = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.DebugDONOTUSE|Win32.ActiveCfg = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.DebugDONOTUSE|Win32.Build.0 = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.DebugDONOTUSE|x64.ActiveCfg = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.DebugDONOTUSE|x64.Build.0 = Debug|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Release|Win32.ActiveCfg = Release|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Release|Win32.Build.0 = Release|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Release|x64.ActiveCfg = Release|Win32
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Release|x64.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -447,6 +473,7 @@ Global
 		{91E8438D-F413-4A2C-8A9B-6CE3544116DB} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
 		{209E8482-B6B8-4CF8-B117-B93BE1B9E72D} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
 		{985915AF-E158-45E7-BBDD-BCD4642E5574} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
+		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {393C1DF6-B2DC-4FF2-8100-36DD1F304E10}
@@ -458,6 +485,7 @@ Global
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{367d5edc-f360-49e0-b652-587b9e22cf6c}*SharedItemsImports = 4
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{45d41acc-2c3c-43d2-bc10-02aa73ffc7c7}*SharedItemsImports = 9
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{4b9ab78f-085b-4f29-8e03-99fcf081f273}*SharedItemsImports = 4
+		Plugins\PluginUtilities\PluginUtilities.vcxitems*{55fdea3d-7f65-4a84-a0c6-1ffd3b4f6744}*SharedItemsImports = 4
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{7c84f18c-fe8c-4731-882d-05c237753a54}*SharedItemsImports = 4
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{7de3df47-662f-4e34-9899-140f103d2d01}*SharedItemsImports = 4
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{81a35b95-1cdd-4f58-a24c-e2dc47d43dd0}*SharedItemsImports = 4

@@ -358,13 +358,8 @@ namespace HkIServerImpl
 		ISERVER_LOG();
 		ISERVER_LOGARG_UI(iClientID);
 
-		uint iClientIDTarget;
-
 		CHECK_FOR_DISCONNECT
 
-		iClientIDTarget = HkGetClientIDByShip(ci.dwTargetShip);
-
-		iDmgTo = iClientIDTarget;
 		iDmgMunitionID = ci.iProjectileArchID;
 
 		CALL_PLUGINS_V(PLUGIN_HkIServerImpl_SPMunitionCollision, __stdcall, (struct SSPMunitionCollisionInfo const & ci, unsigned int iClientID), (ci, iClientID));

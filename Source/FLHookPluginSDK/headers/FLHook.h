@@ -738,8 +738,6 @@ extern IMPORT HkIClientImpl* FakeClient;
 extern IMPORT HkIClientImpl* HookClient;
 extern IMPORT char* OldClient;
 
-extern IMPORT uint	iDmgTo;
-extern IMPORT uint iDmgToSpaceID;
 extern IMPORT uint iDmgMunitionID;
 
 extern IMPORT bool g_bMsg;

@@ -15,7 +15,8 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // defines
 
-#define CORE_TIMER_LOGGING
+//#define CORE_TIMER_LOGGING
+//#define HOOK_TIMER_LOGGING
 
 #ifdef CORE_TIMER_LOGGING
 #define LOG_CORE_TIMER_START \
@@ -28,7 +29,6 @@ coreExecutionMap[__FUNCTION__].emplace_back(std::chrono::duration_cast<std::chro
 #define LOG_CORE_TIMER_END
 #endif
 
-#define HOOK_TIMER_LOGGING
 
 #define HKHKSUCCESS(a) ((a) == HKE_OK)
 #define HKSUCCESS(a) ((hkLastErr = (a)) == HKE_OK)
@@ -830,20 +830,13 @@ void GuidedDestroyedNaked();
 void BaseDestroyed(uint iObject, uint iClientIDBy);
 void ShipColGrpDestroyedHookNaked();
 void SolarColGrpDestroyedHookNaked();
-extern FARPROC ColGrpDeathOrigFunc;
 
 // HkDamage
 void HookExplosionHitNaked();
-void _HkCb_AddDmgEntry();
 void ShipHullDamageNaked();
 void SolarHullDamageNaked();
 bool AllowPlayerDamageIds(const uint clientVictim, const uint clientAttacker);
-void _HkCb_NonGunWeaponHitsBase();
 void AllowPlayerDamageNaked();
-extern FARPROC AllowPlayerDamageOrigFunc;
-extern FARPROC fpOldNonGunWeaponHitsBase;
-EXPORT extern bool g_gNonGunHitsBase;
-EXPORT extern float g_LastHitPts;
 
 // HkCbCallbacks
 void _SendMessageHook();
@@ -903,14 +896,14 @@ extern EXPORT HkIClientImpl* FakeClient;
 extern EXPORT HkIClientImpl* HookClient;
 extern EXPORT char* OldClient;
 
-extern EXPORT uint iDmgTo;
-extern EXPORT uint iDmgToSpaceID;
 extern EXPORT uint iDmgMunitionID;
 
 extern EXPORT bool g_bMsg;
 extern EXPORT bool g_bMsgS;
 extern EXPORT bool g_bMsgU;
 
+extern FARPROC ColGrpDeathOrigFunc;
+extern FARPROC AllowPlayerDamageOrigFunc;
 extern FARPROC fpOldShipDestroyed;
 extern FARPROC fpOldSolarDestroyed;
 extern FARPROC MineDestroyedOrigFunc;

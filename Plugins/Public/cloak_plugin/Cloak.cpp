@@ -662,20 +662,13 @@ void CloakDisruptor(uint iClientID)
 	{
 		// Get the this player's current system and location in the system.
 		uint client2 = HkGetClientIdFromPD(pPD);
-		uint iSystem2 = 0;
-		pub::Player::GetSystem(client2, iSystem2);
-		if (iSystem != iSystem2)
+		if (iSystem != pPD->iSystemID)
 			continue;
 
-		uint iShip2;
-		pub::Player::GetShip(client2, iShip2);
-
-		Vector pos2;
-		Matrix rot2;
-		pub::SpaceObj::GetLocation(iShip2, pos2, rot2);
+		CShip* cShip = ClientInfo[pPD->iOnlineID].cship;
 
 		// Is player within the specified range of the sending char.
-		if (HkDistance3D(pos, pos2) > mapClientsCD[iClientID].cd.range)
+		if (HkDistance3D(pos, cShip->vPos) > mapClientsCD[iClientID].cd.range)
 			continue;
 
 		//we check if that character has a cloaking device.
@@ -694,7 +687,7 @@ void CloakDisruptor(uint iClientID)
 			if (cloakInfo.iState == STATE_CLOAK_CHARGING 
 				|| (cloakInfo.iState == STATE_CLOAK_ON && (cloakInfo.tmCloakTime + cloakInfo.arch->activationPeriod) < now))
 			{
-				SetState(client2, iDmgToSpaceID, STATE_CLOAK_OFF);
+				SetState(client2, cShip->id, STATE_CLOAK_OFF);
 				pub::Audio::PlaySoundEffect(client2, CreateID("cloak_osiris"));
 				PrintUserCmdText(client2, L"Alert: Cloaking device disruption field detected.");
 				cloakInfo.DisruptTime = mapClientsCD[iClientID].cd.cooldown;
@@ -1008,8 +1001,9 @@ void __stdcall ExplosionHit(IObjRW* iobj, ExplosionDamageEvent* explosion, Damag
 
 	if (dmg->get_cause() != DamageCause::CruiseDisrupter && dmg->get_cause() != DamageCause::UnkDisrupter)
 		return;
-	
-	uint client = ((CShip*)iobj->cobj)->ownerPlayer;
+
+	CShip* cShip = reinterpret_cast<CShip*>(iobj->cobj);
+	uint client = cShip->ownerPlayer;
 	if (!client)
 		return;
 
@@ -1021,7 +1015,7 @@ void __stdcall ExplosionHit(IObjRW* iobj, ExplosionDamageEvent* explosion, Damag
 	if (!mapClientsCloak[client].bAdmin
 		&& mapClientsCloak[client].iState == STATE_CLOAK_CHARGING)
 	{
-		SetState(client, iDmgToSpaceID, STATE_CLOAK_OFF);
+		SetState(client, cShip->id, STATE_CLOAK_OFF);
 	}
 }
 

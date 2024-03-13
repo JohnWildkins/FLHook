@@ -228,7 +228,7 @@ bool UserCmd_Process(uint iClientID, const wstring &wscCmd)
 	return false;
 }
 
-void __stdcall HkCb_AddDmgEntry(DamageList *dmg, ushort subObjID, float& setHealth, DamageEntry::SubObjFate& fate)
+void __stdcall SolarDamageHull(DamageList *dmg, ushort subObjID, float& setHealth, DamageEntry::SubObjFate& fate)
 {
 	returncode = DEFAULT_RETURNCODE;
 	if (!iDmgMunitionID || (!iDmgToSpaceID && !iDmgTo))
@@ -323,7 +323,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->bMayUnload = true;
 	p_PI->ePluginReturnCode = &returncode;
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&LoadSettings, PLUGIN_LoadSettings, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkCb_AddDmgEntry, PLUGIN_HkCb_AddDmgEntry, 9));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SolarDamageHull, PLUGIN_HkCb_AddDmgEntry, 9));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Plugin_Communication_Callback, PLUGIN_Plugin_Communication, 10));
 	return p_PI;

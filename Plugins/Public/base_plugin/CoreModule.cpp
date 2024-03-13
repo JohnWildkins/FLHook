@@ -353,11 +353,11 @@ bool CoreModule::Timer(uint time)
 	return false;
 }
 
-float CoreModule::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints)
+float CoreModule::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float incoming_damage)
 {
 	if (!base->has_shield)
 	{
-		return new_hitpoints;
+		return incoming_damage;
 	}
 	base->shield_timeout = time(nullptr) + 60;
 	if (!base->isShieldOn)
@@ -368,10 +368,8 @@ float CoreModule::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, floa
 	if ((base->use_vulnerability_window && !base->vulnerableWindowStatus) || base->invulnerable == 1 || base->shield_strength_multiplier >= 1.0f)
 	{
 		// base invulnerable, keep current health value
-		return curr_hitpoints;
+		return 0;
 	}
-
-	float damageTaken;
 
 	if (base->siege_gun_only)
 	{
@@ -379,20 +377,16 @@ float CoreModule::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, floa
 		if (siegeDamageIter == siegeWeaponryMap.end())
 		{
 			//Siege gun(s) defined, but this is not one of them, no damage dealt
-			return curr_hitpoints;
+			return 0;
 		}
 		else
 		{
 			//Even with siege gun damage override, it still takes shield strength into the account
-			damageTaken = siegeDamageIter->second * (1.0f - base->shield_strength_multiplier);
+			incoming_damage = siegeDamageIter->second * (1.0f - base->shield_strength_multiplier);
 		}
 	}
-	else
-	{
-		damageTaken = curr_hitpoints - new_hitpoints;
-	}
 
-	base->damage_taken_since_last_threshold += damageTaken;
+	base->damage_taken_since_last_threshold += incoming_damage;
 	if (base->damage_taken_since_last_threshold >= base->base_shield_reinforcement_threshold)
 	{
 		base->damage_taken_since_last_threshold -= base->base_shield_reinforcement_threshold;
@@ -405,12 +399,18 @@ float CoreModule::SpaceObjDamaged(uint space_obj, uint attacking_space_obj, floa
 		wasDamagedSinceLastUpdate = true;
 	}
 
-	float newHealth = max(0, curr_hitpoints - damageTaken);
+	base->SpaceObjDamaged(space_obj, attacking_space_obj, incoming_damage);
 
-	base->SpaceObjDamaged(space_obj, attacking_space_obj, curr_hitpoints, newHealth);
-
-	base->base_health = newHealth;
-	return newHealth;
+	if (base->base_health > incoming_damage)
+	{
+		base->base_health -= incoming_damage;
+		return incoming_damage;
+	}
+	else
+	{
+		SpaceObjDestroyed(space_obj);
+		return 0.0f;
+	}
 }
 
 bool CoreModule::SpaceObjDestroyed(uint space_obj, bool moveFile, bool broadcastDeath)

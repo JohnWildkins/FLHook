@@ -179,10 +179,10 @@ void UserCmd_SetDeathMsg(const uint client, const wstring& wscParam)
 void __stdcall AddDamageEntry(IObjRW* iobj, float incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
-	if (dmg->iInflictorPlayerID) //ignore impossible HP values (cause unknown) and negative hp events such as repair ship
+	if (dmg->iInflictorPlayerID)
 	{
 		uint targetClient = reinterpret_cast<CShip*>(iobj->cobj)->ownerPlayer;
-		if (targetClient)
+		if (targetClient && targetClient != dmg->iInflictorPlayerID)
 		{
 			damageArray[targetClient][dmg->iInflictorPlayerID].currDamage += incDmg;
 		}
@@ -404,7 +404,11 @@ void __stdcall SendDeathMessage(const wstring& message, uint& system, uint& clie
 		damageToInflictorMap[damageToAdd] = pd->iOnlineID;
 		totalDamageTaken += damageToAdd;
 	}
-	if (totalDamageTaken == 0.0f)
+
+	const Archetype::Ship* shipArch = Archetype::GetShip(Players[clientVictim].iShipArchetype);
+
+	if ((totalDamageTaken < (shipArch->fHitPoints * 0.02))
+		&& !clientKiller)
 	{
 		ClearDamageTaken(clientVictim);
 		ProcessDeath(clientVictim, &message, nullptr, system, false, involvedGroups, involvedPlayers);
@@ -514,7 +518,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->ePluginReturnCode = &returncode;
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&LoadSettings, PLUGIN_LoadSettings, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&AddDamageEntry, PLUGIN_HkCb_AddDmgEntry_AFTER, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&AddDamageEntry, PLUGIN_ShipHullDmg, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SendDeathMessage, PLUGIN_SendDeathMsg, 5));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&DelayedDisconnect, PLUGIN_DelayedDisconnect, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Disconnect, PLUGIN_HkIServerImpl_DisConnect, 0));

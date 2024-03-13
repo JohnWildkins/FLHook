@@ -29,6 +29,8 @@ uint lastProcessedProjectile = 0;
 
 constexpr uint shipObjType = (Fighter | Freighter | Transport | Gunboat | Cruiser | Capital);
 
+bool debug = false;
+
 enum TRACKING_STATE {
 	TRACK_ALERT,
 	TRACK_NOALERT,
@@ -66,6 +68,92 @@ EXPORT PLUGIN_RETURNCODE Get_PluginReturnCode()
 //Loading Settings
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+void ReadMunitionDataFromInis()
+{
+	INI_Reader ini;
+
+	char szCurDir[MAX_PATH];
+	GetCurrentDirectory(sizeof(szCurDir), szCurDir);
+	string currDir = string(szCurDir);
+	string scFreelancerIniFile = currDir + R"(\freelancer.ini)";
+
+	string gameDir = currDir.substr(0, currDir.length() - 4);
+	gameDir += string(R"(\DATA\)");
+
+	if (!ini.open(scFreelancerIniFile.c_str(), false))
+	{
+		return;
+	}
+
+	vector<string> equipFiles;
+
+	while (ini.read_header())
+	{
+		if (!ini.is_header("Data"))
+		{
+			continue;
+		}
+		while (ini.read_value())
+		{
+			if (ini.is_value("equipment"))
+			{
+				equipFiles.emplace_back(ini.get_value_string());
+			}
+		}
+	}
+
+	for (string equipFile : equipFiles)
+	{
+		equipFile = gameDir + equipFile;
+		if (!ini.open(equipFile.c_str(), false))
+		{
+			continue;
+		}
+
+		uint currNickname;
+		while (ini.read_header())
+		{
+			if (ini.is_header("Mine"))
+			{
+				while (ini.read_value())
+				{
+					if (ini.is_value("nickname"))
+					{
+						currNickname = CreateID(ini.get_value_string());
+					}
+					else if (ini.is_value("self_detonate"))
+					{
+						if (ini.get_value_bool(0))
+						{
+							selfDetonatingMines.insert(currNickname);
+						}
+						continue;
+					}
+				}
+			}
+			else if (ini.is_header("Munition"))
+			{
+				while (ini.read_value())
+				{
+					if (ini.is_value("nickname"))
+					{
+						currNickname = CreateID(ini.get_value_string());
+					}
+					else if (ini.is_value("arming_time"))
+					{
+						float armingTime = ini.get_value_float(0);
+						if (armingTime > 0.0f)
+						{
+							guidedArmingTimesMap[currNickname] = armingTime;
+						}
+						continue;
+					}
+				}
+			}
+		}
+	}
+}
+
 void LoadSettings()
 {
 	returncode = DEFAULT_RETURNCODE;
@@ -75,6 +163,9 @@ void LoadSettings()
 	char szCurDir[MAX_PATH];
 	GetCurrentDirectory(sizeof(szCurDir), szCurDir);
 	string scPluginCfgFile = string(szCurDir) + R"(\flhook_plugins\munitioncntl.cfg)";
+
+	ReadMunitionDataFromInis();
+
 	if (!ini.open(scPluginCfgFile.c_str(), false))
 	{
 		return;
@@ -131,26 +222,6 @@ void LoadSettings()
 				ConPrint(L"MunitionCntl: Error! Incomplete [TrackingBlacklist] definition in config files!\n");
 			}
 		}
-		else if (ini.is_header("SelfDetonatingMines"))
-		{
-			while (ini.read_value())
-			{
-				if (ini.is_value("mine"))
-				{
-					selfDetonatingMines.insert(CreateID(ini.get_value_string()));
-				}
-			}
-		}
-		else if (ini.is_header("ArmingMissiles"))
-		{
-			while (ini.read_value())
-			{
-				if (ini.is_value("missile"))
-				{
-					guidedArmingTimesMap[CreateID(ini.get_value_string(0))] = ini.get_value_float(1);
-				}
-			}
-		}
 	}
 	ini.close();
 }
@@ -174,6 +245,10 @@ void ProcessGuided(FLPACKET_CREATEGUIDED& createGuidedPacket)
 
 	if (!targetId) // prevent missiles from tracking cloaked ships, and missiles sticking targeting to last selected target
 	{
+		if (debug)
+		{
+			ConPrint(L"Projectile %x notarget notrack\n", createGuidedPacket.iMunitionId);
+		}
 		tracking = NOTRACK_NOALERT;
 	}
 	else if (setNoTrackingAlertProjectiles.count(createGuidedPacket.iMunitionId)) // for 'dumbified' seeker missiles, disable alert, used for flaks and snub dumbfires
@@ -187,6 +262,11 @@ void ProcessGuided(FLPACKET_CREATEGUIDED& createGuidedPacket)
 		const auto& blacklistedShipTypeTargets = mapTrackingByObjTypeBlacklistBitmap.at(createGuidedPacket.iMunitionId);
 		if (blacklistedShipTypeTargets & targetType)
 		{
+			if (debug)
+			{
+				ConPrint(L"Projectile %08x notarget notrack\n", createGuidedPacket.iMunitionId);
+				ConPrint(L"filter %08x target %08x\n", blacklistedShipTypeTargets, targetType);
+			}
 			tracking = NOTRACK_NOALERT;
 		}
 	}
@@ -239,7 +319,7 @@ bool __stdcall GuidedDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 	if (guidedArmingTimesMap.count(iobj->cobj->archetype->iArchID))
 	{
 		float armingTime = guidedArmingTimesMap.at(iobj->cobj->archetype->iArchID);
-		CGuided* guided = (CGuided*)iobj->cobj;
+		CGuided* guided = reinterpret_cast<CGuided*>(iobj->cobj);
 		if (guided->lifetime < armingTime)
 		{
 			returncode = SKIPPLUGINS_NOFUNCTIONCALL;
@@ -249,6 +329,22 @@ bool __stdcall GuidedDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 	return true;
 }
 
+#define IS_CMD(a) !args.compare(L##a)
+#define RIGHT_CHECK(a) if(!(cmd->rights & a)) { cmd->Print(L"ERR No permission\n"); return true; }
+bool ExecuteCommandString_Callback(CCmds* cmd, const wstring& args)
+{
+	returncode = DEFAULT_RETURNCODE;
+
+	if (IS_CMD("munitiondebug"))
+	{
+		debug = !debug;
+		ConPrint(L"munitioncntl debug %u\n", (uint)debug);
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		return false;
+	}
+
+	return true;
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Functions to hook
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -266,6 +362,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&CreateGuided, PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_CREATEGUIDED, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&MineDestroyed, PLUGIN_MineDestroyed, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GuidedDestroyed, PLUGIN_GuidedDestroyed, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
 
 	return p_PI;
 }

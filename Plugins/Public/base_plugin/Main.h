@@ -130,7 +130,7 @@ public:
 
 	virtual bool Timer(uint time) { return false; }
 
-	virtual float SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints) { return 0.0f; }
+	virtual float SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float incoming_damage) { return 0.0f; }
 	virtual bool SpaceObjDestroyed(uint space_obj) { return false; }
 	virtual void SetReputation(int player_rep, float attitude) {}
 
@@ -162,7 +162,7 @@ public:
 	void SaveState(FILE* file);
 
 	bool Timer(uint time);
-	float SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints);
+	float SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float incoming_damage);
 	bool SpaceObjDestroyed(uint space_obj, bool moveFile = true, bool broadcastDeath = true);
 	void SetReputation(int player_rep, float attitude);
 	void EnableShieldFuse(bool shieldState);
@@ -206,7 +206,7 @@ public:
 	void SaveState(FILE* file);
 
 	bool Timer(uint time);
-	float SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints);
+	float SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float incoming_damage);
 	bool SpaceObjDestroyed(uint space_obj);
 	void SetReputation(int player_rep, float attitude);
 	void Reset();
@@ -312,7 +312,7 @@ public:
 	void SyncReputationForBase();
 	void SyncReputationForBaseObject(uint space_obj);
 
-	void SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float curr_hitpoints, float new_hitpoints);
+	void SpaceObjDamaged(uint space_obj, uint attacking_space_obj, float incoming_damage);
 	void CheckVulnerabilityWindow(uint currTime);
 	void LogDamageDealers();
 

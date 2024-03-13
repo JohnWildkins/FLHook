@@ -1089,7 +1089,7 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring &wscCmd)
 	return false;
 }
 
-void __stdcall HkCb_AddDmgEntry(IObjRW* iobj, float incDmg, DamageList* dmg)
+void __stdcall SolarDamageHull(IObjRW* iobj, float incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
 
@@ -1405,7 +1405,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkTimerCheckKick, PLUGIN_HkTimerCheckKick, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkCb_AddDmgEntry, PLUGIN_HkCb_AddDmgEntry, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SolarDamageHull, PLUGIN_HkCb_AddDmgEntry, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&JettisonCargo, PLUGIN_HkIServerImpl_JettisonCargo, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&AddTradeEquip, PLUGIN_HkIServerImpl_AddTradeEquip, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodBuy, PLUGIN_HkIServerImpl_GFGoodBuy, 0));

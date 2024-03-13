@@ -1228,7 +1228,7 @@ namespace Message
 	/** Send a faction invite message to all players with a particular prefix. */
 	bool Message::UserCmd_FactionInvite(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
 	{
-		const wstring &wscCharnamePrefix = GetParam(wscParam, ' ', 0);
+		const wstring &wscCharnamePrefix = ToLower(GetParam(wscParam, ' ', 0));
 
 		bool msgSent = false;
 
@@ -1242,7 +1242,7 @@ namespace Message
 		list<HKPLAYERINFO> lst = HkGetPlayers();
 		foreach(lst, HKPLAYERINFO, iter)
 		{
-			if (ToLower(iter->wscCharname).find(ToLower(wscCharnamePrefix)) == string::npos)
+			if (ToLower(iter->wscCharname).find(wscCharnamePrefix) == string::npos)
 				continue;
 			if (iter->iClientID == iClientID)
 				continue;

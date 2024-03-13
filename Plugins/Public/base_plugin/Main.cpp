@@ -2287,7 +2287,7 @@ void __stdcall ReqAddItem_AFTER(unsigned int good, char const *hardpoint, int co
 		// Add to check-list which is being compared to the users equip-list when saving
 		// char to fix "Ship or Equipment not sold on base" kick
 		EquipDesc ed;
-		ed.sID = pd->LastEquipID;
+		ed.sID = pd->lastEquipId;
 		ed.iCount = 1;
 		ed.iArchID = good;
 		pd->lShadowEquipDescList.add_equipment_item(ed, false);
@@ -2330,20 +2330,6 @@ void __stdcall ReqEquipment(class EquipDescList const &edl, unsigned int client)
 		returncode = SKIPPLUGINS;
 }
 
-void __stdcall CShip_destroy(CShip* ship)
-{
-	returncode = DEFAULT_RETURNCODE;
-
-	// Dispatch the destroy event to the appropriate module.
-	uint space_obj = ship->get_id();
-	auto& i = spaceobj_modules.find(space_obj);
-	if (i != spaceobj_modules.end())
-	{
-		returncode = SKIPPLUGINS;
-		i->second->SpaceObjDestroyed(space_obj);
-	}
-}
-
 void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint dunno)
 {
 	returncode = DEFAULT_RETURNCODE;
@@ -2358,39 +2344,48 @@ void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint dunno)
 	customSolarList.erase(space_obj);
 }
 
-void __stdcall HkCb_AddDmgEntry(IObjRW* iobj, float incDmg, DamageList* dmg)
+bool __stdcall SolarDamageHull(IObjRW* iobj, float incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
 	if (!dmg->iInflictorPlayerID)
 	{
-		return;
+		return true;
 	}
 
-	CSolar* base = (CSolar*)iobj->cobj;
+	CSolar* base = reinterpret_cast<CSolar*>(iobj->cobj);
 	if (!spaceobj_modules.count(base->id))
 	{
-		return;
+		return true;
 	}
 
-	returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-
-	Module* damagedModule = spaceobj_modules[iDmgToSpaceID];
+	Module* damagedModule = spaceobj_modules.at(base->id);
 
 	float curr = base->hitPoints;
-	float max = base->solararch()->fHitPoints;
 
 	// This call is for us, skip all plugins.
-	float newHealth = damagedModule->SpaceObjDamaged(iDmgToSpaceID, dmg->get_inflictor_id(), curr, newHealth);
-	if (newHealth == curr)
+	float damageTaken = damagedModule->SpaceObjDamaged(base->id, dmg->get_inflictor_id(), incDmg);
+	if (damageTaken == 0.0f)
 	{
-		return;
-	}
-	if (newHealth == 0.0f)
-	{
-		((CoreModule*)damagedModule)->SpaceObjDestroyed(iDmgToSpaceID);
+		if (set_plugin_debug_special)
+		{
+			AddLog("Base %08x damaged with %08x, no effect", iDmgMunitionID, base->id);
+		}
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		return false;
 	}
 
-	dmg->add_damage_entry(1, newHealth, (DamageEntry::SubObjFate)0);
+	if (incDmg != damageTaken)
+	{
+		if (set_plugin_debug_special)
+		{
+			AddLog("Base %08x damaged with %08x, %u dmg", base->id, iDmgMunitionID, damageTaken);
+		}
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		dmg->add_damage_entry(1, curr - damageTaken, (DamageEntry::SubObjFate)0);
+		return false;
+	}
+
+	return true;
 }
 
 #define IS_CMD(a) !args.compare(L##a)
@@ -3222,9 +3217,8 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
 
-	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&CShip_destroy, PLUGIN_HkIEngine_CShip_destroy, 0));
 	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&BaseDestroyed, PLUGIN_BaseDestroyed, 0));
-	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&HkCb_AddDmgEntry, PLUGIN_SolarHullDmg, 15));
+	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&SolarDamageHull, PLUGIN_SolarHullDmg, 15));
 	p_PI->lstHooks.emplace_back(PLUGIN_HOOKINFO((FARPROC*)&Plugin_Communication_CallBack, PLUGIN_Plugin_Communication, 11));
 	return p_PI;
 }

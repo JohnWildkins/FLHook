@@ -161,7 +161,8 @@ namespace HyperJump
 	void AdminCmd_Move(CCmds* cmds, float x, float y, float z);
 	//void AdminCmd_TestBot(CCmds* cmds, const wstring &wscSystemNick, int iCheckZoneTime);
 	bool UserCmd_IsSystemJumpable(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
-	bool UserCmd_SetSector(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
+	bool UserCmd_SetSector(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage);
+	bool UserCmd_ListSector(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage);
 	bool UserCmd_Jump(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_JumpBeacon(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage);
 	bool UserCmd_AcceptBeaconRequest(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage);

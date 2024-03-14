@@ -1104,6 +1104,36 @@ namespace HyperJump
 		return true;
 	}
 
+	bool UserCmd_ListSector(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage)
+	{
+		wstring targetSystem = ToLower(GetParamToEnd(wscParam, ' ', 0));
+		for (struct Universe::ISystem* sysinfo = Universe::GetFirstSystem(); sysinfo; sysinfo = Universe::GetNextSystem())
+		{
+			const auto& fullSystemName = HkGetWStringFromIDS(sysinfo->strid_name);
+			const auto& fullSystemNameLowerCased = ToLower(fullSystemName);
+			if (fullSystemNameLowerCased != targetSystem)
+			{
+				continue;
+			}
+			if (!mapSystemJumps.count(sysinfo->id))
+			{
+				PrintUserCmdText(iClientID, L"ERR System not jumpable");
+				return true;
+			}
+
+			PrintUserCmdText(iClientID, L"Available jump coordinates for %ls:", fullSystemName.c_str());
+			uint count = 1;
+			for (auto coord : mapSystemJumps.at(sysinfo->id))
+			{
+				PrintUserCmdText(iClientID, L"%u. %ls", count, coord.sector.c_str());
+				++count;
+			}
+			return true;
+		}
+		PrintUserCmdText(iClientID, L"ERR Incorrect system name");
+		return true;
+	}
+
 	void HyperJump::Timer()
 	{
 		list<uint> lstOldClients;

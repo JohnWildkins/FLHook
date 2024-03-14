@@ -153,7 +153,7 @@ void LoadSettings()
 					voiceData.push_back(
 						{	CreateID(ini.get_value_string(0)),
 							stows(string(ini.get_value_string(0))),
-							stows(ini.get_value_string(2)) });
+							stows(ini.get_value_string(1)) });
 				}
 				else if (ini.is_value("AdminVoice"))
 				{

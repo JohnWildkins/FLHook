@@ -999,67 +999,11 @@ void ExploreZone(CmnAsteroid::CAsteroidField* field, Vector pos, Matrix& rot, fl
 	}
 }
 
-void testShit(const wstring& sysNick, const wstring& zoneNick)
-{
-	uint sysHash = CreateID(wstos(sysNick).c_str());
-	uint zoneHash = CreateID(wstos(zoneNick).c_str());
-
-	sysHash = CreateID("br05");
-	zoneHash = CreateID("Zone_Br05_gsm_field01");
-
-	CmnAsteroid::CAsteroidSystem* asteroidSystem = CmnAsteroid::Find(sysHash);
-	if (!asteroidSystem)
-	{
-		ConPrint(L"sysError\n");
-		return;
-	}
-
-	CmnAsteroid::CAsteroidField* field = asteroidSystem->FindFirst();
-	while (field)
-	{
-		if (field->zone->iZoneID == zoneHash)
-		{
-			break;
-		}
-		field = asteroidSystem->FindNext();
-	}
-
-	if (!field)
-	{
-		return;
-	}
-
-	float cubeSize = field->get_cube_size();
-	uint lastCount = 0;
-	Vector initialPos = field->closest_cube_pos(field->zone->vPos);
-	ExploreZone(field, initialPos, field->zone->mRot, cubeSize, zzz);
-
-	ConPrint(L"amount %u, %f\n", CObject::Count(CObject::CASTEROID_OBJECT), cubeSize);
-
-	fLog = fopen("./flhook_logs/Asteroids.log", "at");
-
-	CAsteroid* cobj = reinterpret_cast<CAsteroid*>(CObject::FindFirst(CObject::CASTEROID_OBJECT));
-	while (cobj)
-	{
-		fprintf(fLog, "%0.0f %0.0f %0.0f\n", cobj->vPos.x, cobj->vPos.y, cobj->vPos.z);
-		cobj = reinterpret_cast<CAsteroid*>(CObject::FindNext());
-	}
-	fclose(fLog);
-}
-
 #define IS_CMD(a) !wscCmd.compare(L##a)
 
 bool ExecuteCommandString_Callback(CCmds* cmds, const wstring& wscCmd)
 {
 	returncode = DEFAULT_RETURNCODE;
-	if (IS_CMD("test"))
-	{
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-
-		testShit(cmds->ArgStr(1), cmds->ArgStr(2));
-
-		return true;
-	}
 	if (IS_CMD("aicreate"))
 	{
 		returncode = SKIPPLUGINS_NOFUNCTIONCALL;

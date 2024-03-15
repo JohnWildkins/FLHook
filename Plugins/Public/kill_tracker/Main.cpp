@@ -408,7 +408,7 @@ void __stdcall SendDeathMessage(const wstring& message, uint& system, uint& clie
 	const Archetype::Ship* shipArch = Archetype::GetShip(Players[clientVictim].iShipArchetype);
 
 	if ((totalDamageTaken < (shipArch->fHitPoints * 0.02))
-		&& !clientKiller)
+		&& (!clientKiller || clientKiller == clientVictim))
 	{
 		ClearDamageTaken(clientVictim);
 		ProcessDeath(clientVictim, &message, nullptr, system, false, involvedGroups, involvedPlayers);

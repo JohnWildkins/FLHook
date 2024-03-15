@@ -8,13 +8,12 @@
 #include <math.h>
 #include <list>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <FLHook.h>
 #include <plugin.h>
 #include <PluginUtilities.h>
 
 using namespace std;
-
-
 
 #endif

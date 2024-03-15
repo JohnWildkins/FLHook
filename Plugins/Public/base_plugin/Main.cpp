@@ -2344,18 +2344,18 @@ void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint dunno)
 	customSolarList.erase(space_obj);
 }
 
-bool __stdcall SolarDamageHull(IObjRW* iobj, float incDmg, DamageList* dmg)
+void __stdcall SolarDamageHull(IObjRW* iobj, float& incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
 	if (!dmg->iInflictorPlayerID)
 	{
-		return true;
+		return;
 	}
 
 	CSolar* base = reinterpret_cast<CSolar*>(iobj->cobj);
 	if (!spaceobj_modules.count(base->id))
 	{
-		return true;
+		return;
 	}
 
 	Module* damagedModule = spaceobj_modules.at(base->id);
@@ -2363,29 +2363,9 @@ bool __stdcall SolarDamageHull(IObjRW* iobj, float incDmg, DamageList* dmg)
 	float curr = base->hitPoints;
 
 	// This call is for us, skip all plugins.
-	float damageTaken = damagedModule->SpaceObjDamaged(base->id, dmg->get_inflictor_id(), incDmg);
-	if (damageTaken == 0.0f)
-	{
-		if (set_plugin_debug_special)
-		{
-			AddLog("Base %08x damaged with %08x, no effect", iDmgMunitionID, base->id);
-		}
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		return false;
-	}
+	incDmg = damagedModule->SpaceObjDamaged(base->id, dmg->get_inflictor_id(), incDmg);
 
-	if (incDmg != damageTaken)
-	{
-		if (set_plugin_debug_special)
-		{
-			AddLog("Base %08x damaged with %08x, %u dmg", base->id, iDmgMunitionID, damageTaken);
-		}
-		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
-		dmg->add_damage_entry(1, curr - damageTaken, (DamageEntry::SubObjFate)0);
-		return false;
-	}
-
-	return true;
+	return;
 }
 
 #define IS_CMD(a) !args.compare(L##a)

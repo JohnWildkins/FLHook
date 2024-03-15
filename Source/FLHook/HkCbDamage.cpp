@@ -46,19 +46,19 @@ Called when ship was damaged
 
 FARPROC ShipHullDamageOrigFunc, SolarHullDamageOrigFunc;
 
-bool __stdcall ShipHullDamage(IObjRW* iobj, float incDmg, DamageList* dmg)
+void __stdcall ShipHullDamage(IObjRW* iobj, float& incDmg, DamageList* dmg)
 {
-
-	CSimple * simple = reinterpret_cast<CSimple*>(iobj->cobj);
+	CSimple* simple = reinterpret_cast<CSimple*>(iobj->cobj);
 	if (simple->ownerPlayer && dmg->iInflictorPlayerID)
 	{
-		CALL_PLUGINS(PLUGIN_ShipHullDmg, bool, __stdcall, (IObjRW * iobj, float incDmg, DamageList * dmg), (iobj, incDmg, dmg));
+		CALL_PLUGINS_V(PLUGIN_ShipHullDmg, __stdcall, (IObjRW * iobj, float& incDmg, DamageList * dmg), (iobj, incDmg, dmg));
 
-		ClientInfo[simple->ownerPlayer].dmgLastPlayerId = dmg->iInflictorPlayerID;
-		ClientInfo[simple->ownerPlayer].dmgLastCause = dmg->damageCause;
+		if (incDmg > 0)
+		{
+			ClientInfo[simple->ownerPlayer].dmgLastPlayerId = dmg->iInflictorPlayerID;
+			ClientInfo[simple->ownerPlayer].dmgLastCause = dmg->damageCause;
+		}
 	}
-
-	return true;
 }
 
 __declspec(naked) void ShipHullDamageNaked()
@@ -66,24 +66,18 @@ __declspec(naked) void ShipHullDamageNaked()
 	__asm {
 		push ecx
 		push[esp + 0xC]
-		push[esp + 0xC]
+		lea eax, [esp + 0xC]
+		push eax
 		push ecx
 		call ShipHullDamage
 		pop ecx
-		test al, al
-		jz skipLabel
-		mov eax, [ShipHullDamageOrigFunc]
-		jmp eax
-	skipLabel:
-		ret 0x8
+		jmp [ShipHullDamageOrigFunc]
 	}
 }
 
-bool __stdcall SolarHullDamage(IObjRW* iobj, float incDmg, DamageList* dmg)
+void __stdcall SolarHullDamage(IObjRW* iobj, float& incDmg, DamageList* dmg)
 {
-	CALL_PLUGINS(PLUGIN_SolarHullDmg, bool, __stdcall, (IObjRW* iobj, float incDmg, DamageList* dmg), (iobj, incDmg, dmg));
-
-	return true;
+	CALL_PLUGINS_V(PLUGIN_SolarHullDmg, __stdcall, (IObjRW* iobj, float& incDmg, DamageList* dmg), (iobj, incDmg, dmg));
 }
 
 __declspec(naked) void SolarHullDamageNaked()
@@ -91,16 +85,12 @@ __declspec(naked) void SolarHullDamageNaked()
 	__asm {
 		push ecx
 		push[esp + 0xC]
-		push[esp + 0xC]
+		lea eax, [esp + 0xC]
+		push eax
 		push ecx
 		call SolarHullDamage
 		pop ecx
-		test al, al
-		jz skipLabel
-		mov eax, [SolarHullDamageOrigFunc]
-		jmp eax
-	skipLabel:
-		ret 0x8
+		jmp [SolarHullDamageOrigFunc]
 	}
 }
 

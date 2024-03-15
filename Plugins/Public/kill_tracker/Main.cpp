@@ -176,7 +176,7 @@ void UserCmd_SetDeathMsg(const uint client, const wstring& wscParam)
 	PrintUserCmdText(client, L"OK");
 }
 
-void __stdcall AddDamageEntry(IObjRW* iobj, float incDmg, DamageList* dmg)
+void __stdcall AddDamageEntry(IObjRW* iobj, float& incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
 	if (dmg->iInflictorPlayerID)

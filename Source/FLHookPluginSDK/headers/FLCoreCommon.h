@@ -1727,38 +1727,6 @@ namespace CmnAsteroid
 	IMPORT  bool  compute_cube_orientation(unsigned long, class Matrix *, struct AxisRotations const &, float);
 };
 
-struct IMPORT CAsteroid
-{
-public:
-	struct IMPORT CreateParms
-	{
-		CreateParms(void);
-		struct CreateParms & operator=(struct CreateParms const &);
-
-	public:
-		unsigned char data[OBJECT_DATA_SIZE];
-	};
-
-	CAsteroid(struct CAsteroid const &);
-	CAsteroid(void);
-	virtual ~CAsteroid(void);
-	struct Archetype::Asteroid const * asteroidarch(void)const;
-	unsigned long get_asteroid_id(void);
-	class CmnAsteroid::CAsteroidField const * get_owner_field(void);
-	virtual class Vector  get_velocity(void)const;
-	void init(CAsteroid::CreateParms const &);
-	bool is_instant_kill(void);
-	bool is_mine(void);
-	void set_system(unsigned int);
-	virtual int update(float, unsigned int);
-
-protected:
-	virtual void init_physics(class Vector const &, class Vector const &);
-
-public:
-	unsigned char data[OBJECT_DATA_SIZE];
-};
-
 struct INotify
 {
 	enum Event;
@@ -2246,6 +2214,38 @@ public:
 	Vector radiusCenter;     // 52
 	float radiusCentered;    // 55
 	ObjectType type;         // 56
+};
+
+struct IMPORT CAsteroid : public CSimple
+{
+public:
+	struct IMPORT CreateParms
+	{
+		CreateParms(void);
+		struct CreateParms& operator=(struct CreateParms const&);
+
+	public:
+		unsigned char data[OBJECT_DATA_SIZE];
+	};
+
+	CAsteroid(struct CAsteroid const&);
+	CAsteroid(void);
+	virtual ~CAsteroid(void);
+	struct Archetype::Asteroid const* asteroidarch(void)const;
+	unsigned long get_asteroid_id(void);
+	class CmnAsteroid::CAsteroidField const* get_owner_field(void);
+	virtual class Vector  get_velocity(void)const;
+	void init(CAsteroid::CreateParms const&);
+	bool is_instant_kill(void);
+	bool is_mine(void);
+	void set_system(unsigned int);
+	virtual int update(float, unsigned int);
+
+protected:
+	virtual void init_physics(class Vector const&, class Vector const&);
+
+public:
+	unsigned char data[OBJECT_DATA_SIZE];
 };
 
 struct IMPORT CProjectile : public CSimple

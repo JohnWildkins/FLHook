@@ -2347,25 +2347,33 @@ void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint dunno)
 void __stdcall SolarDamageHull(IObjRW* iobj, float& incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
-	if (!dmg->iInflictorPlayerID)
+	if (!dmg->iInflictorID)
 	{
 		return;
 	}
 
 	CSolar* base = reinterpret_cast<CSolar*>(iobj->cobj);
+	if (base->hitPoints > 1'000'000'000)
+	{
+		incDmg = 0;
+		return;
+	}
+
 	if (!spaceobj_modules.count(base->id))
 	{
 		return;
 	}
 
-	Module* damagedModule = spaceobj_modules.at(base->id);
+	if (!dmg->iInflictorPlayerID)
+	{
+		incDmg = 0;
+		return;
+	}
 
-	float curr = base->hitPoints;
+	Module* damagedModule = spaceobj_modules.at(base->id);
 
 	// This call is for us, skip all plugins.
 	incDmg = damagedModule->SpaceObjDamaged(base->id, dmg->get_inflictor_id(), incDmg);
-
-	return;
 }
 
 #define IS_CMD(a) !args.compare(L##a)

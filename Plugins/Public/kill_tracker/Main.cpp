@@ -405,6 +405,13 @@ void __stdcall SendDeathMessage(const wstring& message, uint& system, uint& clie
 		totalDamageTaken += damageToAdd;
 	}
 
+	if (clientKiller && totalDamageTaken == 0.0f)
+	{
+		AddLog("Supressing kill message: %s", wstos(message).c_str());
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		return;
+	}
+
 	const Archetype::Ship* shipArch = Archetype::GetShip(Players[clientVictim].iShipArchetype);
 
 	if ((totalDamageTaken < (shipArch->fHitPoints * 0.02))

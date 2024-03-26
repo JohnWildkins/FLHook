@@ -340,18 +340,18 @@ void CrashCatcher::Init()
 					PatchCallAddr((char*)hModContentAC, 0xC608D, (char*)HkCb_C4800Hook);
 				}
 
-				// Patch for crash at content.dll + c458f ~ adoxa (thanks man)
-				// Crash if solar has wrong destructible archetype (NewArk for example 
-				// is fuchu_core with hit_pts = 0 - different from client and server 
-				// in my case) and player taken off from nearest base of this archetype (Manhattan)
-				// This is caused by multiple players dying in the same planet death zone.
-				// Also 000c458f error arises when nearby stations within a zone ) are 
-				// reputed not coinciding with reputation on the client-side.
-				{
-					// alternative: 0C458F, 8B0482->33C090
-					byte patch[] = { 0x74, 0x11, 0xeb, 0x05 };
-					WriteProcMem((char*)hModContentAC + 0xC457F, patch, 4);
-				}
+				// // Patch for crash at content.dll + c458f ~ adoxa (thanks man)
+				// // Crash if solar has wrong destructible archetype (NewArk for example 
+				// // is fuchu_core with hit_pts = 0 - different from client and server 
+				// // in my case) and player taken off from nearest base of this archetype (Manhattan)
+				// // This is caused by multiple players dying in the same planet death zone.
+				// // Also 000c458f error arises when nearby stations within a zone ) are 
+				// // reputed not coinciding with reputation on the client-side.
+				// {
+				// 	// alternative: 0C458F, 8B0482->33C090
+				// 	byte patch[] = { 0x74, 0x11, 0xeb, 0x05 };
+				// 	WriteProcMem((char*)hModContentAC + 0xC457F, patch, 4);
+				// }
 
 				// Patch for crash at content.dll + 47bc4
 				// This appears to be related to NPCs and/or their chatter. What's 

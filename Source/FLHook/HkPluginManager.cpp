@@ -1,8 +1,6 @@
 #include "hook.h"
 #include "CCmds.h"
 
-bool g_bPlugin_nofunctioncall;
-
 void* vPluginRet;
 
 list<PLUGIN_HOOKDATA>* pPluginHooks;

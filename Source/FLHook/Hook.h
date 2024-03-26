@@ -15,8 +15,8 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // defines
 
-//#define CORE_TIMER_LOGGING
-//#define HOOK_TIMER_LOGGING
+#define CORE_TIMER_LOGGING
+#define HOOK_TIMER_LOGGING
 
 #ifdef CORE_TIMER_LOGGING
 #define LOG_CORE_TIMER_START \
@@ -122,18 +122,16 @@ struct SEHException
 
 EXPORT extern void WriteMiniDump(SEHException * ex);
 EXPORT extern void AddExceptionInfoLog(SEHException * ex);
-//#define LOG_EXCEPTION { AddLog("ERROR: Exception in %s", __FUNCTION__); AddExceptionInfoLog(0); }
 #define TRY_HOOK try { _set_se_translator(SEHException::Translator);
 #define CATCH_HOOK(e) } \
 catch(SEHException& ex) { e; AddBothLog("ERROR: SEH Exception in %s on line %d; minidump may contain more information.", __FUNCTION__, __LINE__); AddExceptionInfoLog(&ex); } \
 catch(std::exception& ex) { e; AddBothLog("ERROR: STL Exception in %s on line %d: %s.", __FUNCTION__, __LINE__, ex.what()); AddExceptionInfoLog(0); } \
 catch (...) { e; AddBothLog("ERROR: Exception in %s on line %d.", __FUNCTION__, __LINE__); AddExceptionInfoLog(0); }
-#define LOG_EXCEPTION { AddLog("ERROR: Exception in %s", __FUNCTION__); AddExceptionInfoLog(0); }
 #else
-#define TRY_HOOK try
-#define CATCH_HOOK(e) catch(...) { e; AddLog("ERROR: Exception in %s", __FUNCTION__); }
+#define TRY_HOOK try{
+#define CATCH_HOOK(e) }catch(...) { e; AddLog("ERROR: Exception in %s", __FUNCTION__); }
 #endif
-
+#define LOG_EXCEPTION { AddLog("ERROR: Exception in %s", __FUNCTION__); AddExceptionInfoLog(0); }
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -194,7 +192,6 @@ struct PLUGIN_SORTCRIT {
 	auto timeStart = std::chrono::high_resolution_clock::now();\
 	ret_type vPluginRet; \
 	bool bPluginReturn = false; \
-	g_bPlugin_nofunctioncall = false; \
 	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
 			if(itplugin->bPaused) \
@@ -214,7 +211,6 @@ struct PLUGIN_SORTCRIT {
 				break; \
 			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
 				bPluginReturn = true; \
-				g_bPlugin_nofunctioncall = true; \
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
@@ -229,7 +225,6 @@ struct PLUGIN_SORTCRIT {
 #define CALL_PLUGINS_V(callback_id,calling_convention,arg_types,args) \
 { \
 	bool bPluginReturn = false; \
-	g_bPlugin_nofunctioncall = false; \
 	auto timeStart = std::chrono::high_resolution_clock::now();\
 	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
@@ -250,7 +245,6 @@ struct PLUGIN_SORTCRIT {
 				break; \
 			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
 				bPluginReturn = true; \
-				g_bPlugin_nofunctioncall = true; \
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
@@ -264,7 +258,6 @@ struct PLUGIN_SORTCRIT {
 // extra macro for plugin calls where we dont care about or dont allow returning
 #define CALL_PLUGINS_NORET(callback_id,calling_convention,arg_types,args) \
 { \
-	g_bPlugin_nofunctioncall = false; \
 	auto timeStart = std::chrono::high_resolution_clock::now();\
 	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
@@ -285,7 +278,6 @@ struct PLUGIN_SORTCRIT {
 				break; \
 			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
 				AddLog("ERROR: Plugin '%s' wants to suppress function call in %s [%s] - denied!", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
-				g_bPlugin_nofunctioncall = true; \
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
@@ -301,7 +293,6 @@ struct PLUGIN_SORTCRIT {
 { \
 	ret_type vPluginRet; \
 	bool bPluginReturn = false; \
-	g_bPlugin_nofunctioncall = false; \
 	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
 			if(itplugin->bPaused) \
@@ -317,7 +308,6 @@ struct PLUGIN_SORTCRIT {
 				break; \
 			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
 				bPluginReturn = true; \
-				g_bPlugin_nofunctioncall = true; \
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
@@ -330,7 +320,6 @@ struct PLUGIN_SORTCRIT {
 #define CALL_PLUGINS_V(callback_id,calling_convention,arg_types,args) \
 { \
 	bool bPluginReturn = false; \
-	g_bPlugin_nofunctioncall = false; \
 	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
 			if(itplugin->bPaused) \
@@ -346,7 +335,6 @@ struct PLUGIN_SORTCRIT {
 				break; \
 			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
 				bPluginReturn = true; \
-				g_bPlugin_nofunctioncall = true; \
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
@@ -358,7 +346,6 @@ struct PLUGIN_SORTCRIT {
 // extra macro for plugin calls where we dont care about or dont allow returning
 #define CALL_PLUGINS_NORET(callback_id,calling_convention,arg_types,args) \
 { \
-	g_bPlugin_nofunctioncall = false; \
 	TRY_HOOK { \
 		foreach(pPluginHooks[(int)callback_id],PLUGIN_HOOKDATA, itplugin) { \
 			if(itplugin->bPaused) \
@@ -374,7 +361,6 @@ struct PLUGIN_SORTCRIT {
 				break; \
 			} else if(*itplugin->ePluginReturnCode == NOFUNCTIONCALL) { \
 				AddLog("ERROR: Plugin '%s' wants to suppress function call in %s [%s] - denied!", itplugin->sName.c_str(), __FUNCTION__, __FUNCDNAME__); \
-				g_bPlugin_nofunctioncall = true; \
 			} else if(*itplugin->ePluginReturnCode == SKIPPLUGINS) \
 				break; \
 		} \
@@ -928,7 +914,6 @@ extern EXPORT uint g_iPlayerCount;
 extern EXPORT bool g_bNPCDisabled;
 extern EXPORT char *g_FLServerDataPtr;
 
-extern EXPORT bool g_bPlugin_nofunctioncall;
 
 
 // help

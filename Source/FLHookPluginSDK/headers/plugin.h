@@ -218,6 +218,7 @@ enum PLUGIN_CALLBACKS
 	PLUGIN_SolarHullDmg,
 	PLUGIN_GuidedDestroyed,
 	PLUGIN_MineDestroyed,
+	PLUGIN_HKIServerImpl_PopUpDialog,
 	PLUGIN_CALLBACKS_AMOUNT,
 };
 

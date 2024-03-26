@@ -57,9 +57,9 @@ struct iddockinfo
 };
 
 //first uint will be the ID hash
-map <uint, iddockinfo> iddock;
+unordered_map<uint, iddockinfo> iddock;
 
-map<uint, uint> player_last_base;
+unordered_map<uint, uint> player_last_base;
 
 void SCI::LoadSettings()
 {
@@ -178,68 +178,60 @@ void SCI::LoadSettings()
 void SCI::CheckItems(unsigned int iClientID)
 {
 	bool foundamountedid = false;
+
+
 	// Check all items on ship, see if one isn't meant for this ship class.
 	for (list<EquipDesc>::iterator item = Players[iClientID].equipDescList.equip.begin(); item != Players[iClientID].equipDescList.equip.end(); item++)
 	{
-		//we stick in a small check to see if there's an ID mounted
-		if (mapIDs.find(item->iArchID) != mapIDs.end())
+		if (!item->bMounted)
 		{
-			if (item->bMounted)
-			{
-				foundamountedid = true;
-			}
+			continue;
 		}
 
-		if (shipclassitems.find(item->iArchID) != shipclassitems.end())
+		//we stick in a small check to see if there's an ID mounted
+		if (mapIDs.count(item->iArchID))
 		{
-			if (item->bMounted)
-			{
-				//more efficent to find out if the item we want is mounted first, then we get the data for the error message if necessary.
-				for (auto iter = shipclassitems.begin(); iter != shipclassitems.end(); iter++)
-				{
-					if (iter->first == item->iArchID)
-					{
-						Archetype::Ship* TheShipArch = Archetype::GetShip(Players[iClientID].iShipArchetype);
-						wstring classname = shipclassnames.find(TheShipArch->iShipClass)->second;
-						//PrintUserCmdText(iClientID, L"DEBUG: This ship class is known as %s", classname.c_str());
-						bool foundclass = false;
+			foundamountedid = true;
+		}
 
-						// find if the ship class match
-						if (!iter->second.canmount.count(TheShipArch->iShipClass))
-						{
-							//PrintUserCmdText(iClientID, L"DEBUG: Tagged for ownage");
-							wstring wscMsg = L"ERR you can't undock with %item mounted. This item can't be mounted on a %shipclass.";
-							wscMsg = ReplaceStr(wscMsg, L"%item", itemnames.find(iter->first)->second.c_str());
-							wscMsg = ReplaceStr(wscMsg, L"%shipclass", classname.c_str());
-							owned[iClientID] = wscMsg;
-							StoreReturnPointForClient(iClientID);
-							return;
-						}
-						// check for non-stackable items
-						else
-						{
-							for (list<EquipDesc>::iterator itemstack = Players[iClientID].equipDescList.equip.begin(); itemstack != Players[iClientID].equipDescList.equip.end(); itemstack++)
-							{
-								if (itemstack->bMounted)
-								{
-									bool founditernostack = false;
-									// find if a mounted item match the non-stack list
-									if (iter->second.nomount.count(TheShipArch->iShipClass))
-									{
-										wstring wscMsg = L"ERR You are not allowed to have %item and %second mounted at the same time.";
-										wscMsg = ReplaceStr(wscMsg, L"%item", itemnames.find(iter->first)->second.c_str());
-										wscMsg = ReplaceStr(wscMsg, L"%second", itemnames.find(itemstack->iArchID)->second.c_str());
-										owned[iClientID] = wscMsg;
-										StoreReturnPointForClient(iClientID);
-										return;
-									}
-								}
-							}
-						}
-						//PrintUserCmdText(iClientID, wscMsg);
-						break;
-					}
-				}
+		if (!shipclassitems.count(item->iArchID))
+		{
+			continue;
+		}
+
+		auto& shipClassItem = shipclassitems.at(item->iArchID);
+
+		Archetype::Ship* TheShipArch = Archetype::GetShip(Players[iClientID].iShipArchetype);
+		wstring classname = shipclassnames.find(TheShipArch->iShipClass)->second;
+
+		// find if the ship class match
+		if (!shipClassItem.canmount.count(TheShipArch->iShipClass))
+		{
+			//PrintUserCmdText(iClientID, L"DEBUG: Tagged for ownage");
+			wstring wscMsg = L"ERR you can't undock with %item mounted. This item can't be mounted on a %shipclass.";
+			wscMsg = ReplaceStr(wscMsg, L"%item", itemnames.find(item->iArchID)->second.c_str());
+			wscMsg = ReplaceStr(wscMsg, L"%shipclass", classname.c_str());
+			owned[iClientID] = wscMsg;
+			StoreReturnPointForClient(iClientID);
+			return;
+		}
+		// check for non-stackable items
+		
+		for (list<EquipDesc>::iterator itemstack = Players[iClientID].equipDescList.equip.begin(); itemstack != Players[iClientID].equipDescList.equip.end(); itemstack++)
+		{
+			if (!itemstack->bMounted)
+			{
+				continue;
+			}
+			// find if a mounted item match the non-stack list
+			if (shipClassItem.nomount.count(TheShipArch->iShipClass))
+			{
+				wstring wscMsg = L"ERR You are not allowed to have %item and %second mounted at the same time.";
+				wscMsg = ReplaceStr(wscMsg, L"%item", itemnames.find(item->iArchID)->second.c_str());
+				wscMsg = ReplaceStr(wscMsg, L"%second", itemnames.find(itemstack->iArchID)->second.c_str());
+				owned[iClientID] = wscMsg;
+				StoreReturnPointForClient(iClientID);
+				return;
 			}
 		}
 	}
@@ -350,30 +342,25 @@ void SCI::UpdatePlayerID(unsigned int iClientID)
 	{
 		if (i->bMounted)
 		{
-			// is it a good id
-			for (map<uint, iddockinfo>::iterator iter = iddock.begin(); iter != iddock.end(); iter++)
-			{
-				if (iter->first == i->iArchID)
-				{
-					pinfo info;
-					//PrintUserCmdText(iClientID, L"DEBUG: zonerzonerzonerzoner");
-					info.playerid = i->iArchID;
-					info.shiparch = Players[iClientID].iShipArchetype;
-
-					Archetype::Ship *ship = Archetype::GetShip(info.shiparch);
-					info.maxholdsize = ship->fHoldSize;
-					info.shipclass = ship->iShipClass;
-
-					clientplayerid[iClientID] = info;
-
-					return;
-				}
-			}
+			continue;
 		}
-	}
+		if (!iddock.count(i->iArchID))
+		{
+			continue;
+		}
 
-	//PrintUserCmdText(iClientID, L"DEBUG: Cat = no");
-	return;
+		pinfo info;
+		info.playerid = i->iArchID;
+		info.shiparch = Players[iClientID].iShipArchetype;
+
+		Archetype::Ship *ship = Archetype::GetShip(info.shiparch);
+		info.maxholdsize = ship->fHoldSize;
+		info.shipclass = ship->iShipClass;
+
+		clientplayerid[iClientID] = info;
+
+		break;
+	}
 }
 
 bool SCI::CanDock(uint iDockTarget, uint iClientID)

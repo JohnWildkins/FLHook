@@ -33,8 +33,8 @@
 //Structures and shit yo
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static list<uint> idlist;
-static list<uint> listAllowedShips;
+static unordered_set<uint> idlist;
+static set<uint> listAllowedShips;
 static map<uint, wstring> MapActiveSirens;
 
 static int duration = 60;
@@ -90,7 +90,7 @@ void ADOCK::LoadSettings()
 				{
 					if (ini.is_value("id"))
 					{
-						idlist.push_back(CreateID(ini.get_value_string(0)));
+						idlist.insert(CreateID(ini.get_value_string(0)));
 					}
 				}
 			}
@@ -158,124 +158,90 @@ void ADOCK::Timer()
 
 void ADOCK::ClearClientInfo(uint iClientID)
 {
-	listAllowedShips.remove(iClientID);
+	listAllowedShips.erase(iClientID);
 	MapActiveSirens.erase(iClientID);
 }
 
 void ADOCK::PlayerLaunch(unsigned int iShip, unsigned int client)
 {
-	// Retrieve the location and cargo list.
-	int iHoldSize;
-	list<CARGO_INFO> lstCargo;
-	HkEnumCargo((const wchar_t*)Players.GetActiveCharacterName(client), lstCargo, iHoldSize);
-
-	foreach(lstCargo, CARGO_INFO, i)
+	const CEquip* Id = ClientInfo[client].cship->equip_manager.FindFirst(TractorBeam);
+	if (!Id)
 	{
-		if (i->bMounted)
-		{
-			// is it a good id
-			list<uint>::iterator iter = idlist.begin();
-			while (iter != idlist.end())
-			{
-				if (*iter == i->iArchID)
-				{
-					listAllowedShips.push_back(client);
-					//PrintUserCmdText(client, L"DEBUG: Cat = yes");
-					break;
-				}
-				iter++;
-			}
-		}
+		return;
 	}
 
-	//PrintUserCmdText(client, L"DEBUG: Cat = no");
-	//PrintUserCmdText(client, L"DEBUG: We have %d skittles", duration);
+	if (idlist.count(Id->archetype->iArchID))
+	{
+		listAllowedShips.insert(client);
+	}
 }
 
 bool ADOCK::NoDockCommand(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
 {
-	wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
-	bool isAllowed = false;
-
-	list<uint>::iterator iter = listAllowedShips.begin();
-	while (iter != listAllowedShips.end())
-	{
-		if (*iter == iClientID)
-		{
-			isAllowed = true;
-			break;
-		}
-		iter++;
-	}
-
-	if (isAllowed == false)
+	if (!listAllowedShips.count(iClientID))
 	{
 		PrintUserCmdText(iClientID, L"You are not allowed to use this.");
 		return true;
 	}
-	if (isAllowed == true)
-	{
-		PrintUserCmdText(iClientID, L"You are allowed to use this.");
 
-		uint iShip = 0;
-		pub::Player::GetShip(iClientID, iShip);
-		if (!iShip) {
-			PrintUserCmdText(iClientID, L"Error: You are docked");
-			return true;
-		}
-
-		uint iTarget = 0;
-		pub::SpaceObj::GetTarget(iShip, iTarget);
-
-		if (!iTarget) {
-			PrintUserCmdText(iClientID, L"Error: No target");
-			return true;
-		}
-
-		uint iClientIDTarget = HkGetClientIDByShip(iTarget);
-		if (!HkIsValidClientID(iClientIDTarget))
-		{
-			PrintUserCmdText(iClientID, L"Error: Target is no player");
-			return true;
-		}
-
-		wstring wscTargetCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientIDTarget);
-
-		for (map<uint, int>::iterator i = mapActiveNoDock.begin(); i != mapActiveNoDock.end(); ++i)
-		{
-			if (i->first == iClientIDTarget)
-			{
-				PrintUserCmdText(iClientID, L"OK Removal of docking rights reset to %d seconds", duration);
-				PrintUserCmdText(iClientIDTarget, L"Removal of docking rights reset to %d seconds", duration);
-				i->second = duration;
-				return true;
-			}
-		}
-
-		mapActiveNoDock[iClientIDTarget] = duration;
-
-		//10k space message
-
-		stringstream ss;
-		ss << duration;
-		string strduration = ss.str();
-
-		wstring wscMsg = L"%time %victim's docking rights have been removed by %player for minimum %duration seconds";
-		wscMsg = ReplaceStr(wscMsg, L"%time", GetTimeString(false));
-		wscMsg = ReplaceStr(wscMsg, L"%player", (const wchar_t*)Players.GetActiveCharacterName(iClientID));
-		wscMsg = ReplaceStr(wscMsg, L"%victim", wscTargetCharname.c_str());
-		wscMsg = ReplaceStr(wscMsg, L"%duration", stows(strduration).c_str());
-		PrintLocalUserCmdText(iClientID, wscMsg, 10000);
-
-		//internal log
-		wstring wscMsgLog = L"<%sender> removed docking rights from <%victim>";
-		wscMsgLog = ReplaceStr(wscMsgLog, L"%sender", wscCharname.c_str());
-		wscMsgLog = ReplaceStr(wscMsgLog, L"%victim", wscTargetCharname.c_str());
-		string scText = wstos(wscMsgLog);
-		Logging("%s", scText.c_str());
-
+	uint iShip = 0;
+	pub::Player::GetShip(iClientID, iShip);
+	if (!iShip) {
+		PrintUserCmdText(iClientID, L"Error: You are docked");
 		return true;
 	}
+
+	uint iTarget = 0;
+	pub::SpaceObj::GetTarget(iShip, iTarget);
+
+	if (!iTarget) {
+		PrintUserCmdText(iClientID, L"Error: No target");
+		return true;
+	}
+
+	uint iClientIDTarget = HkGetClientIDByShip(iTarget);
+	if (!HkIsValidClientID(iClientIDTarget))
+	{
+		PrintUserCmdText(iClientID, L"Error: Target is no player");
+		return true;
+	}
+
+	wstring wscTargetCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientIDTarget);
+
+	for (map<uint, int>::iterator i = mapActiveNoDock.begin(); i != mapActiveNoDock.end(); ++i)
+	{
+		if (i->first == iClientIDTarget)
+		{
+			PrintUserCmdText(iClientID, L"OK Removal of docking rights reset to %d seconds", duration);
+			PrintUserCmdText(iClientIDTarget, L"Removal of docking rights reset to %d seconds", duration);
+			i->second = duration;
+			return true;
+		}
+	}
+
+	mapActiveNoDock[iClientIDTarget] = duration;
+
+	//10k space message
+
+	stringstream ss;
+	ss << duration;
+	string strduration = ss.str();
+
+	wstring wscMsg = L"%time %victim's docking rights have been removed by %player for minimum %duration seconds";
+	wscMsg = ReplaceStr(wscMsg, L"%time", GetTimeString(false));
+	wscMsg = ReplaceStr(wscMsg, L"%player", (const wchar_t*)Players.GetActiveCharacterName(iClientID));
+	wscMsg = ReplaceStr(wscMsg, L"%victim", wscTargetCharname.c_str());
+	wscMsg = ReplaceStr(wscMsg, L"%duration", stows(strduration).c_str());
+	PrintLocalUserCmdText(iClientID, wscMsg, 10000);
+
+	wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
+
+	//internal log
+	wstring wscMsgLog = L"<%sender> removed docking rights from <%victim>";
+	wscMsgLog = ReplaceStr(wscMsgLog, L"%sender", wscCharname.c_str());
+	wscMsgLog = ReplaceStr(wscMsgLog, L"%victim", wscTargetCharname.c_str());
+	string scText = wstos(wscMsgLog);
+	Logging("%s", scText.c_str());
 
 	return true;
 }

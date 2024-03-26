@@ -35,8 +35,7 @@ __declspec(naked) void HookExplosionHitNaked()
 		push ecx
 		call ExplosionHit
 		pop ecx
-		mov eax, [fpOldExplosionHit]
-		jmp eax
+		jmp [fpOldExplosionHit]
 	}
 }
 

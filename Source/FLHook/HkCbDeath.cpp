@@ -117,110 +117,110 @@ Called when ship was destroyed
 
 void __stdcall ShipDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 {
-
+	if (!isKill)
+	{
+		return;
+	}
 	LOG_CORE_TIMER_START
 	TRY_HOOK {
-		if (isKill)
-		{
-			CALL_PLUGINS_V(PLUGIN_ShipDestroyed, __stdcall, (IObjRW * iobj, bool isKill, uint killerId), (iobj, isKill, killerId));
+		CALL_PLUGINS_V(PLUGIN_ShipDestroyed, __stdcall, (IObjRW * iobj, bool isKill, uint killerId), (iobj, isKill, killerId));
 
-			CShip *cship = (CShip*)iobj->cobj;
-			uint iClientID = cship->ownerPlayer;
+		CShip *cship = (CShip*)iobj->cobj;
+		uint iClientID = cship->ownerPlayer;
 
-			if (iClientID) { // a player was killed
+		if (iClientID) { // a player was killed
 
-				wstring wscEvent;
-				wscEvent.reserve(256);
-				wscEvent = L"kill";
+			wstring wscEvent;
+			wscEvent.reserve(256);
+			wscEvent = L"kill";
 
-				uint iSystemID;
-				pub::Player::GetSystem(iClientID, iSystemID);
-				wchar_t wszSystem[64];
-				swprintf(wszSystem, L"%u", iSystemID);
+			uint iSystemID;
+			pub::Player::GetSystem(iClientID, iSystemID);
+			wchar_t wszSystem[64];
+			swprintf(wszSystem, L"%u", iSystemID);
 
-				DamageCause iCause = ClientInfo[iClientID].dmgLastCause;
-				uint iClientIDKiller = HkGetClientIDByShip(killerId);
+			DamageCause iCause = ClientInfo[iClientID].dmgLastCause;
+			uint iClientIDKiller = HkGetClientIDByShip(killerId);
 
-				wstring wscVictim = (wchar_t*)Players.GetActiveCharacterName(iClientID);
-				wscEvent += L" victim=" + wscVictim;
-				if (iClientIDKiller) {
-					wstring wscType = L"";
-					if (iCause == DamageCause::MissileTorpedo)
-						wscType = L"Missile/Torpedo";
-					else if (iCause == DamageCause::Mine)
-						wscType = L"Mine";
-					else if ((iCause == DamageCause::CruiseDisrupter) || (iCause == DamageCause::UnkDisrupter) || (iCause == DamageCause::DummyDisrupter))
-						wscType = L"Wasp/Hornet";
-					else if (iCause == DamageCause::Collision)
-						wscType = L"Collision";
-					else if (iCause == DamageCause::Gun)
-						wscType = L"Gun";
-					else {
-						wscType = L"Gun"; //0x02
-	//					AddLog("get_cause() returned %X", iCause);
-					}
-
-					wstring wscMsg;
-					if (iClientID == iClientIDKiller) {
-						wscEvent += L" type=selfkill";
-						wscMsg = ReplaceStr(set_wscDeathMsgTextSelfKill, L"%victim", wscVictim);
-					}
-					else {
-						wscEvent += L" type=player";
-						wstring wscKiller = (wchar_t*)Players.GetActiveCharacterName(iClientIDKiller);
-						wscEvent += L" by=" + wscKiller;
-
-						wscMsg = ReplaceStr(set_wscDeathMsgTextPlayerKill, L"%victim", wscVictim);
-						wscMsg = ReplaceStr(wscMsg, L"%killer", wscKiller);
-					}
-
-					wscMsg = ReplaceStr(wscMsg, L"%type", wscType);
-					if (set_bDieMsg && wscMsg.length())
-						SendDeathMsg(wscMsg, iSystemID, iClientID, iClientIDKiller);
-					ProcessEvent(L"%s", wscEvent.c_str());
-
+			wstring wscVictim = (wchar_t*)Players.GetActiveCharacterName(iClientID);
+			wscEvent += L" victim=" + wscVictim;
+			if (iClientIDKiller) {
+				wstring wscType = L"";
+				if (iCause == DamageCause::MissileTorpedo)
+					wscType = L"Missile/Torpedo";
+				else if (iCause == DamageCause::Mine)
+					wscType = L"Mine";
+				else if ((iCause == DamageCause::CruiseDisrupter) || (iCause == DamageCause::UnkDisrupter) || (iCause == DamageCause::DummyDisrupter))
+					wscType = L"Wasp/Hornet";
+				else if (iCause == DamageCause::Collision)
+					wscType = L"Collision";
+				else if (iCause == DamageCause::Gun)
+					wscType = L"Gun";
+				else {
+					wscType = L"Gun"; //0x02
+	//				AddLog("get_cause() returned %X", iCause);
 				}
-				else if (iCause == DamageCause::Admin) {
-					wstring wscMsg = ReplaceStr(set_wscDeathMsgTextAdminKill, L"%victim", wscVictim);
 
-					if (set_bDieMsg && wscMsg.length())
-						SendDeathMsg(wscMsg, iSystemID, iClientID, 0);
+				wstring wscMsg;
+				if (iClientID == iClientIDKiller) {
+					wscEvent += L" type=selfkill";
+					wscMsg = ReplaceStr(set_wscDeathMsgTextSelfKill, L"%victim", wscVictim);
 				}
-				else if (!killerId) {
-					wscEvent += L" type=suicide";
-					wstring wscMsg = ReplaceStr(set_wscDeathMsgTextSuicide, L"%victim", wscVictim);
+				else {
+					wscEvent += L" type=player";
+					wstring wscKiller = (wchar_t*)Players.GetActiveCharacterName(iClientIDKiller);
+					wscEvent += L" by=" + wscKiller;
 
-					if (set_bDieMsg && wscMsg.length())
-						SendDeathMsg(wscMsg, iSystemID, iClientID, 0);
-					ProcessEvent(L"%s", wscEvent.c_str());
+					wscMsg = ReplaceStr(set_wscDeathMsgTextPlayerKill, L"%victim", wscVictim);
+					wscMsg = ReplaceStr(wscMsg, L"%killer", wscKiller);
 				}
-				else 
-				{
-					wstring wscType = L"";
-					if (iCause == DamageCause::MissileTorpedo)
-						wscType = L"Missile/Torpedo";
-					else if (iCause == DamageCause::Mine)
-						wscType = L"Mine";
-					else if ((iCause == DamageCause::CruiseDisrupter) || (iCause == DamageCause::DummyDisrupter) || (iCause == DamageCause::UnkDisrupter))
-						wscType = L"Wasp/Hornet";
-					else if (iCause == DamageCause::Collision)
-						wscType = L"Collision";
-					else
-						wscType = L"Gun"; //0x02
 
-					wscEvent += L" type=npc";
-					wstring wscMsg = ReplaceStr(set_wscDeathMsgTextNPC, L"%victim", wscVictim);
-					wscMsg = ReplaceStr(wscMsg, L"%type", wscType);
+				wscMsg = ReplaceStr(wscMsg, L"%type", wscType);
+				if (set_bDieMsg && wscMsg.length())
+					SendDeathMsg(wscMsg, iSystemID, iClientID, iClientIDKiller);
+				ProcessEvent(L"%s", wscEvent.c_str());
 
-					if (set_bDieMsg && wscMsg.length())
-						SendDeathMsg(wscMsg, iSystemID, iClientID, 0);
-					ProcessEvent(L"%s", wscEvent.c_str());
-				}
 			}
+			else if (iCause == DamageCause::Admin) {
+				wstring wscMsg = ReplaceStr(set_wscDeathMsgTextAdminKill, L"%victim", wscVictim);
 
-			ClientInfo[iClientID].iShipOld = ClientInfo[iClientID].iShip;
-			ClientInfo[iClientID].iShip = 0;
+				if (set_bDieMsg && wscMsg.length())
+					SendDeathMsg(wscMsg, iSystemID, iClientID, 0);
+			}
+			else if (!killerId) {
+				wscEvent += L" type=suicide";
+				wstring wscMsg = ReplaceStr(set_wscDeathMsgTextSuicide, L"%victim", wscVictim);
+
+				if (set_bDieMsg && wscMsg.length())
+					SendDeathMsg(wscMsg, iSystemID, iClientID, 0);
+				ProcessEvent(L"%s", wscEvent.c_str());
+			}
+			else 
+			{
+				wstring wscType = L"";
+				if (iCause == DamageCause::MissileTorpedo)
+					wscType = L"Missile/Torpedo";
+				else if (iCause == DamageCause::Mine)
+					wscType = L"Mine";
+				else if ((iCause == DamageCause::CruiseDisrupter) || (iCause == DamageCause::DummyDisrupter) || (iCause == DamageCause::UnkDisrupter))
+					wscType = L"Wasp/Hornet";
+				else if (iCause == DamageCause::Collision)
+					wscType = L"Collision";
+				else
+					wscType = L"Gun"; //0x02
+
+				wscEvent += L" type=npc";
+				wstring wscMsg = ReplaceStr(set_wscDeathMsgTextNPC, L"%victim", wscVictim);
+				wscMsg = ReplaceStr(wscMsg, L"%type", wscType);
+
+				if (set_bDieMsg && wscMsg.length())
+					SendDeathMsg(wscMsg, iSystemID, iClientID, 0);
+				ProcessEvent(L"%s", wscEvent.c_str());
+			}
 		}
+
+		ClientInfo[iClientID].iShipOld = ClientInfo[iClientID].iShip;
+		ClientInfo[iClientID].iShip = 0;
 	} CATCH_HOOK({})
 	LOG_CORE_TIMER_END
 
@@ -228,10 +228,14 @@ void __stdcall ShipDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 
 void __stdcall SolarDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 {
+	LOG_CORE_TIMER_START
+	TRY_HOOK
 	if (isKill)
 	{
 		CALL_PLUGINS_V(PLUGIN_BaseDestroyed, __stdcall, (IObjRW * iobj, bool isKill, uint killerId), (iobj, isKill, killerId));
 	}
+	CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 }
 FARPROC fpOldSolarDestroyed;
 
@@ -277,12 +281,16 @@ inline bool MineDestroyedPluginCaller(IObjRW* iobj, bool isKill, uint killerId)
 
 bool __stdcall MineDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 {
+	LOG_CORE_TIMER_START
+	TRY_HOOK
 	if (!MineDestroyedPluginCaller(iobj, isKill, killerId) && !isKill)
 	{
 		pub::SpaceObj::Destroy(((CSimple*)iobj->cobj)->id, DestroyType::FUSE);
 		return false;
 	}
 	return true;
+	CATCH_HOOK(AddLog("MineDestroyed exception"); return true)
+	LOG_CORE_TIMER_END
 }
 
 FARPROC MineDestroyedOrigFunc;
@@ -319,12 +327,16 @@ inline bool GuidedDestroyedPluginCaller(IObjRW* iobj, bool isKill, uint killerId
 
 bool __stdcall GuidedDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 {
+	LOG_CORE_TIMER_START
+	TRY_HOOK
 	if (!GuidedDestroyedPluginCaller(iobj, isKill, killerId))
 	{
 		pub::SpaceObj::Destroy(((CSimple*)iobj->cobj)->id, DestroyType::VANISH);
 		return false;
 	}
 	return true;
+	CATCH_HOOK(AddLog("GuidedDestroyed exception"); return true)
+	LOG_CORE_TIMER_END
 }
 
 FARPROC GuidedDestroyedOrigFunc;
@@ -350,7 +362,11 @@ __declspec(naked) void GuidedDestroyedNaked()
 FARPROC ColGrpDeathOrigFunc;
 void __stdcall ShipColGrpDestroyedHook(IObjRW* iobj, CArchGroup* colGrp, DamageEntry::SubObjFate fate, DamageList* dmgList)
 {
+	LOG_CORE_TIMER_START
+	TRY_HOOK
 	CALL_PLUGINS_V(PLUGIN_ShipColGrpDestroyed, , (IObjRW* , CArchGroup* , DamageEntry::SubObjFate fate, DamageList*), (iobj, colGrp, fate, dmgList));
+	CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 }
 __declspec(naked) void ShipColGrpDestroyedHookNaked()
 {
@@ -370,7 +386,11 @@ __declspec(naked) void ShipColGrpDestroyedHookNaked()
 
 void __stdcall SolarColGrpDestroyedHook(IObjRW* iobj, CArchGroup* colGrp, DamageEntry::SubObjFate fate, DamageList* dmgList)
 {
+	LOG_CORE_TIMER_START
+	TRY_HOOK
 	CALL_PLUGINS_V(PLUGIN_SolarColGrpDestroyed, , (IObjRW*, CArchGroup*, DamageEntry::SubObjFate fate, DamageList*), (iobj, colGrp, fate, dmgList));
+	CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 }
 __declspec(naked) void SolarColGrpDestroyedHookNaked()
 {
@@ -394,7 +414,8 @@ Called when base was destroyed
 
 void BaseDestroyed(uint iObject, uint iClientIDBy)
 {
-
+	LOG_CORE_TIMER_START
+	TRY_HOOK
 	CALL_PLUGINS_V(PLUGIN_BaseDestroyed, , (uint, uint), (iObject, iClientIDBy));
 
 	uint iID;
@@ -421,5 +442,6 @@ void BaseDestroyed(uint iObject, uint iClientIDBy)
 		iObject,
 		iID,
 		(wchar_t*)Players.GetActiveCharacterName(iClientIDBy));
-
+	CATCH_HOOK({})
+	LOG_CORE_TIMER_END
 }

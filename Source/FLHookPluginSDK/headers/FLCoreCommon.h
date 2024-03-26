@@ -1431,7 +1431,8 @@ public:
 	void Restart(void);
 
 public:
-	unsigned char data[OBJECT_DATA_SIZE];
+	bool isStart;
+	uint currItemIndex;
 };
 
 struct ISpatialPartition;
@@ -5329,7 +5330,7 @@ struct ExplosionDamageEvent
 	uint attackerId;
 	DamageCause dmgCause;
 	Vector explosionPosition;
-	Archetype::Explosion** explosionArchetype;
+	Archetype::Explosion* explosionArchetype;
 };
 
 struct IObjRWAbstract

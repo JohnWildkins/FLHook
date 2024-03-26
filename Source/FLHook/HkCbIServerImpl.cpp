@@ -1477,9 +1477,13 @@ namespace HkIServerImpl
 	/**************************************************************************************************************
 	**************************************************************************************************************/
 
-	void __stdcall PopUpDialog(unsigned int p1, unsigned int p2)
+	void __stdcall PopUpDialog(unsigned int iClientID, unsigned int buttonPressed)
 	{
-		return; // not used
+		CALL_PLUGINS_V(PLUGIN_HKIServerImpl_PopUpDialog, , (uint, uint), (iClientID, buttonPressed));
+
+		//TODO: find the F9 infocard
+
+		return;
 	}
 
 	/**************************************************************************************************************

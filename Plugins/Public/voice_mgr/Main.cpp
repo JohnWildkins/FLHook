@@ -11,6 +11,7 @@
 
 #include <FLHook.h>
 #include <plugin.h>
+#include <PluginUtilities.h>
 
 /// A return code to indicate to FLHook if we want the hook processing to continue.
 PLUGIN_RETURNCODE returncode;
@@ -359,7 +360,6 @@ bool UserCmd_Process(uint iClientID, const wstring& wscCmd)
 }
 
 #define IS_CMD(a) !wscCmd.compare(L##a)
-#pragma optimize("", off)
 void AdminVoice(CCmds* cmds, const wstring& cmd)
 {
 	returncode = SKIPPLUGINS_NOFUNCTIONCALL;
@@ -393,19 +393,46 @@ void AdminVoice(CCmds* cmds, const wstring& cmd)
 	auto selectedLine = adminVoiceMap.at(voiceLine);
 
 	uint shipId = Players[clientID].iShipID;
+	if (!shipId)
+	{
+		cmds->Print(L"ERR Not in space\n");
+		return;
+	}
 
-	uint targetId;
-	pub::SpaceObj::GetTarget(shipId, targetId);
 	if (selectedLine.commWindow && !skipComm)
 	{
-		pub::SpaceObj::SendComm(0, shipId, selectedLine.voiceHash, &selectedLine.commWindow->costume, selectedLine.commWindow->IDS1, &selectedLine.lineHash, 9, 0, 0.0, false);
+		PlayerData* pd = nullptr;
+		CShip* adminShip = ClientInfo[clientID].cship;
+		const Vector& pos = adminShip->vPos;
+
+		while (pd = Players.traverse_active(pd))
+		{
+			CShip* cship = ClientInfo[pd->iOnlineID].cship;
+			if (!cship)
+			{
+				continue;
+			}
+			if (cship->system != adminShip->system)
+			{
+				continue;
+			}
+			if(cship->id == adminShip->id)
+			{
+				pub::SpaceObj::SendComm(0, cship->id, selectedLine.voiceHash, &selectedLine.commWindow->costume, selectedLine.commWindow->IDS1, &selectedLine.lineHash, 9, 0, 0.0, false);
+			}
+			else if (HkDistance3D(cship->vPos, adminShip->vPos) < 15000)
+			{
+				pub::SpaceObj::SendComm(adminShip->id, cship->id, selectedLine.voiceHash, &selectedLine.commWindow->costume, selectedLine.commWindow->IDS1, &selectedLine.lineHash, 9, 0, 0.0, false);
+			}
+		}
 	}
 	else
 	{
+		uint targetId;
+		pub::SpaceObj::GetTarget(shipId, targetId);
 		pub::SpaceObj::SendComm(shipId, 0, selectedLine.voiceHash, nullptr, 0, &selectedLine.lineHash, 9, 0, 0.5, true);
 	}
 }
-#pragma optimize("", on)
 
 bool ExecuteCommandString_Callback(CCmds* cmds, const wstring& wscCmd)
 {

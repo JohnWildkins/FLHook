@@ -64,8 +64,8 @@ extern void PrintZones();
 struct MiningNodeInfo {
 	uint itemArchId = 0;
 	uint lootArchId;
-	uint countMin;
-	uint countMax;
+	float countMin;
+	float countMax;
 };
 
 struct MiningArchetype
@@ -79,6 +79,7 @@ struct MiningSpawnPointDB {
 	string miningNodeGroupName;
 	vector<Vector> positions;
 	vector<MiningArchetype> nodeArchetypes;
+	vector<string> nicknamesVector;
 	uint nodeIDS;
 	uint respawnCD;
 	uint cdProgress = 0;
@@ -86,10 +87,16 @@ struct MiningSpawnPointDB {
 	uint spawnedNodesCount = 0;
 };
 
-unordered_map<uint, map<uint, float>> idBonusMap;
+struct NodeInfo
+{
+	MiningSpawnPointDB* miningDB;
+	string nickname;
+};
+
+unordered_map<uint, unordered_map<uint, float>> idBonusMap;
 unordered_map<uint, array<MiningNodeInfo, 32>> miningSolarMap;
 vector<MiningSpawnPointDB> miningDB;
-unordered_map<uint, MiningSpawnPointDB*> miningNodeMap;
+unordered_map<uint, NodeInfo> miningNodeMap;
 
 struct ZONE_BONUS
 {
@@ -153,6 +160,7 @@ struct CLIENT_DATA
 	uint lastValidPlayerId = 0;
 	uint lastValidContainerId = 0;
 	CONTAINER_DATA* lastValidContainer = nullptr;
+	uint shipclass = 0;
 
 	uint LastTimeMessageAboutBeingFull = 0;
 };
@@ -162,7 +170,7 @@ unordered_map<uint, CONTAINER_DATA> mapMiningContainers;
 /** A return code to indicate to FLHook if we want the hook processing to continue. */
 PLUGIN_RETURNCODE returncode;
 
-float GetMiningYieldBonus(const uint id, const uint lootId)
+float GetMiningYieldBonus(uint id, const uint lootId)
 {
 	const auto& bonusForId = idBonusMap.find(id);
 	if (bonusForId != idBonusMap.end())
@@ -179,8 +187,6 @@ float GetMiningYieldBonus(const uint id, const uint lootId)
 void CheckClientSetup(const uint iClientID)
 {
 	const auto& equipDesc = Players[iClientID].equipDescList.equip;
-	bool processedID = false;
-	float mountedEquipmentVolume = 0.0f;
 	for (auto& equip : equipDesc)
 	{
 		if (!equip.bMounted || !equip.is_internal())
@@ -190,11 +196,12 @@ void CheckClientSetup(const uint iClientID)
 		const Archetype::Equipment* itemPtr = Archetype::GetEquipment(equip.iArchID);
 		if (itemPtr->get_class_type() == Archetype::TRACTOR)
 		{
-			processedID = true;
 			mapClients[iClientID].equippedID = equip.iArchID;
 			break;
 		}
 	}
+
+	mapClients[iClientID].shipclass = Archetype::GetShip(Players[iClientID].iShipArchetype)->iShipClass;
 }
 
 void DestroyContainer(const uint clientID)
@@ -220,7 +227,7 @@ void DestroyContainer(const uint clientID)
 			info.spaceObjId = iter->second.deployedContainerId;
 			Plugin_Communication(CUSTOM_DESPAWN_SOLAR, &info);
 		}
-		mapClients[clientID].deployedContainerId = 0;
+		iter->second.deployedContainerId = 0;
 	}
 }
 
@@ -230,12 +237,13 @@ void SpawnNode(MiningSpawnPointDB& ms, uint timestamp)
 	int selectedArchetypeIndex = rand() % ms.nodeArchetypes.size();
 
 	Vector eulerRotation;
-	eulerRotation.x = (rand() % 360) - 180;
-	eulerRotation.y = (rand() % 360) - 180;
-	eulerRotation.z = (rand() % 360) - 180;
+	eulerRotation.x = static_cast<float>((rand() % 360) - 180);
+	eulerRotation.y = static_cast<float>((rand() % 360) - 180);
+	eulerRotation.z = static_cast<float>((rand() % 360) - 180);
 	
 	SPAWN_SOLAR_STRUCT info;
-	info.nickname = "mining_node_" + ms.miningNodeGroupName + "_" + itos(timestamp);
+	info.nickname = ms.nicknamesVector.back();
+	ms.nicknamesVector.pop_back();
 	info.solarArchetypeId = ms.nodeArchetypes[selectedArchetypeIndex].archetype;
 	info.loadoutArchetypeId = ms.nodeArchetypes[selectedArchetypeIndex].loadout;
 	info.iSystemId = ms.system;
@@ -248,7 +256,8 @@ void SpawnNode(MiningSpawnPointDB& ms, uint timestamp)
 	ms.spawnedNodesCount++;
 	ms.positions.erase(ms.positions.begin() + selectedPositionIndex);
 
-	miningNodeMap[info.iSpaceObjId] = &ms;
+	NodeInfo node = { &ms, info.nickname };
+	miningNodeMap[info.iSpaceObjId] = node;
 	ms.cdProgress = 0;
 }
 
@@ -384,8 +393,8 @@ EXPORT void LoadSettings()
 						MiningNodeInfo& node = miningSolarMap[solarArch][ini.get_value_int(0)];
 						node.itemArchId = CreateID(ini.get_value_string(1));
 						node.lootArchId = Archetype::GetEquipment(node.itemArchId)->get_loot_appearance()->iArchID;
-						node.countMin = ini.get_value_int(2);
-						node.countMax = ini.get_value_int(3);
+						node.countMin = ini.get_value_float(2);
+						node.countMax = ini.get_value_float(3);
 					}
 				}
 			}
@@ -534,6 +543,10 @@ EXPORT void LoadSettings()
 				ConPrint(L"ERROR: INCORRECT MINING NODE CONFIG FOR NODE SYSTEM %ls\n", stows(miningDBEntry.miningNodeGroupName).c_str());
 				continue;
 			}
+			for (uint i = 0; i < miningDBEntry.maxSpawnCount; ++i)
+			{
+				miningDBEntry.nicknamesVector.emplace_back("mining_node_" + miningDBEntry.miningNodeGroupName + itos(i));
+			}
 
 			miningDB.emplace_back(miningDBEntry);
 		}
@@ -563,6 +576,13 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 	}
 	if (fdwReason == DLL_PROCESS_DETACH)
 	{
+		for (auto item : miningNodeMap)
+		{
+			DESPAWN_SOLAR_STRUCT info;
+			info.spaceObjId = item.first;
+			info.destroyType = DestroyType::VANISH;
+			Plugin_Communication(CUSTOM_DESPAWN_SOLAR, &info);
+		}
 		HkUnloadStringDLLs();
 	}
 	return true;
@@ -684,7 +704,7 @@ void __stdcall SPMunitionCollision(struct SSPMunitionCollisionInfo const & ci, u
 			miningYield = max(miningYield, zoneData.fCurrReserve);
 			finalZone = &zoneData; // save ZONE_BONUS ref to update AFTER all the bonuses are applied
 		}
-		uint shipClass = Archetype::GetShip(Players[iClientID].iShipArchetype)->iShipClass;
+		uint shipClass = cd.shipclass;
 
 		miningYield *= GetMiningYieldBonus(cd.equippedID, lootId) * set_globalModifier * set_shipClassModifiers[shipClass];
 		miningYield += cd.overminedFraction; // add the decimal remainder from last mining event.
@@ -1054,8 +1074,9 @@ void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 	if (miningNodeMap.count(space_obj))
 	{
 		auto& nodeDb = miningNodeMap.at(space_obj);
-		nodeDb->spawnedNodesCount--;
-		nodeDb->positions.push_back(iobj->cobj->vPos);
+		nodeDb.miningDB->spawnedNodesCount--;
+		nodeDb.miningDB->positions.push_back(iobj->cobj->vPos);
+		nodeDb.miningDB->nicknamesVector.emplace_back(nodeDb.nickname);
 		miningNodeMap.erase(space_obj);
 	}
 }
@@ -1065,11 +1086,23 @@ void PlayerLaunch_AFTER(uint shipID, uint clientID)
 	mapClients.erase(clientID);
 }
 
-inline uint GetNodeMiningYield(const MiningNodeInfo& node, const uint clientId)
+float rand_FloatRange(float a, float b)
 {
-	uint baseNumber = (rand() % (node.countMax - node.countMin)) + node.countMin;
+	return ((b - a) * ((float)rand() / RAND_MAX)) + a;
+}
 
-	return baseNumber;
+uint GetNodeMiningYield(const MiningNodeInfo& node, uint clientId)
+{
+	CLIENT_DATA& cd = mapClients[clientId];
+	if (!cd.initialized)
+	{
+		cd.initialized = true;
+		CheckClientSetup(clientId);
+	}
+	float miningBonus = GetMiningYieldBonus(cd.equippedID, node.itemArchId);
+	float droppedAmount = rand_FloatRange(node.countMin, node.countMax) * miningBonus;
+
+	return static_cast<uint>(droppedAmount);
 }
 
 void SolarColGrpDestroyed(IObjRW* iobj, CArchGroup* colGrp, DamageEntry::SubObjFate fate, DamageList* dmg)
@@ -1093,35 +1126,8 @@ void SolarColGrpDestroyed(IObjRW* iobj, CArchGroup* colGrp, DamageEntry::SubObjF
 	Vector colGrpCenter;
 	colGrp->GetCenterOfMass(colGrpCenter);
 
-	uint miningClient = dmg->iInflictorPlayerID;
-	IObjRW* minerTarget = ClientInfo[miningClient].cship->target;
-
 	uint minedAmount = GetNodeMiningYield(node, dmg->iInflictorPlayerID);
 
-	if (minerTarget)
-	{
-
-		//if (minerTarget->cobj->objectClass == CObject::CSHIP_OBJECT)
-		//{
-		//	CShip* cship = reinterpret_cast<CShip*>(minerTarget->cobj);
-		//	if (cship->ownerPlayer)
-		//	{
-		//		//AddCargoToPlayer(cship->ownerPlayer, node.itemArchId, minedAmount);
-		//		return;
-		//	}
-		//
-		//}
-		//else if (minerTarget->cobj->objectClass == CObject::CSOLAR_OBJECT)
-		//{
-		//	CSolar* csolar = reinterpret_cast<CSolar*>(minerTarget->cobj);
-		//	if (mapMiningContainers.count(csolar->id))
-		//	{
-		//		//AddCargoToContainer(mapMiningContainers.at(csolar->id));
-		//		return;
-		//	}
-		//
-		//}
-	}
 	Server.MineAsteroid(iobj->cobj->system, colGrpCenter, node.lootArchId, node.itemArchId, minedAmount, 0);
 
 }

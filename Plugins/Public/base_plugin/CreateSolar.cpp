@@ -28,7 +28,7 @@ void CreateSolar::CreateSolarCallout(SPAWN_SOLAR_STRUCT* info)
 	si.iArchID = info->solarArchetypeId;
 	si.iLoadoutID = info->loadoutArchetypeId;
   
-	si.iHitPointsLeft = 1;
+	si.iHitPointsLeft = -1;
 	si.iSystemID = info->iSystemId;
 	si.mOrientation = info->ori;
 	si.vPos = info->pos;
@@ -72,7 +72,10 @@ void CreateSolar::CreateSolarCallout(SPAWN_SOLAR_STRUCT* info)
 	pub::AI::SubmitState(spaceObjId, &pers);
 
 	info->iSpaceObjId = spaceObjId;
-	pub::SpaceObj::SetRelativeHealth(spaceObjId, info->percentageHp);
+	if (info->percentageHp != 1.0f)
+	{
+		pub::SpaceObj::SetRelativeHealth(spaceObjId, info->percentageHp);
+	}
 
 	if (!info->destObj || !info->destSystem)
 	{

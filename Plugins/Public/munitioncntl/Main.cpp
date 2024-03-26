@@ -127,7 +127,7 @@ void ReadMunitionDataFromInis()
 						{
 							selfDetonatingMines.insert(currNickname);
 						}
-						continue;
+						break;
 					}
 				}
 			}
@@ -146,7 +146,7 @@ void ReadMunitionDataFromInis()
 						{
 							guidedArmingTimesMap[currNickname] = armingTime;
 						}
-						continue;
+						break;
 					}
 				}
 			}

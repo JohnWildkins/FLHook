@@ -926,115 +926,6 @@ void __stdcall GFGoodSell_AFTER(struct SGFGoodSellInfo const &gsi, unsigned int 
 	//MiningEvent_Sale(gsi, iClientID);
 }
 
-map<uint, uint> last_time_of_notice;
-void __stdcall SPMunitionCollision(struct SSPMunitionCollisionInfo const & ci, unsigned int iClientID)
-{
-	returncode = DEFAULT_RETURNCODE;
-
-	if (mapMiningSpaceObj.size() == 0)
-	{
-		//PrintUserCmdText(iClientID, L"DEBUG: empty map, ignoring");
-		return;
-	}
-
-	//check if we're hitting an eligible spaceobj
-	map<uint, string>::iterator i = mapMiningSpaceObj.find(ci.dwTargetShip);
-
-	if (i == mapMiningSpaceObj.end())
-	{
-		//PrintUserCmdText(iClientID, L"DEBUG: end of map, ignoring");
-		return;
-	}
-
-	if (i != mapMiningSpaceObj.end())
-	{
-		MINING_EVENT eventdata = mapMiningEvents[i->second];
-		//PrintUserCmdText(iClientID, stows(eventdata.sEventName).c_str());
-
-		uint iSendToClientID = iClientID;
-
-		if (validminingarch.find(ci.iProjectileArchID) == validminingarch.end())
-		{
-			PrintUserCmdText(iClientID, L"The rock is too tough. You need mining arrays for this.");
-			return;
-		}
-
-		if (eventdata.iObjectiveCurrent == 0)
-		{
-			PrintUserCmdText(iClientID, L"Sorry, this event is completed.");
-			return;
-		}
-
-		uint uPlayerID = HookExt::IniGetI(iClientID, "event.shipid");
-
-		if (eventdata.bLimited)
-		{
-			if (eventdata.lAllowedMinerIDs.find(uPlayerID) == eventdata.lAllowedMinerIDs.end())
-			{
-				PrintUserCmdText(iClientID, L"Sorry, you can't participate in this event with this ID.");
-				return;
-			}
-		}
-
-		uint iShip = Players[iClientID].iShipID;
-		uint iTargetShip;
-		pub::SpaceObj::GetTarget(iShip, iTargetShip);
-		if (iTargetShip)
-		{
-			uint iTargetClientID = HkGetClientIDByShip(iTargetShip);
-			if (iTargetClientID)
-			{
-				if (HkDistance3DByShip(iShip, iTargetShip) < 1000.0f)
-				{
-					iSendToClientID = iTargetClientID;
-				}
-			}
-		}
-
-		int iLootCount = eventdata.iCommodityPerHit;
-		uint iLootID = eventdata.uCommodityID;
-
-		float fHoldRemaining;
-		pub::Player::GetRemainingHoldSize(iSendToClientID, fHoldRemaining);
-		if (fHoldRemaining < iLootCount)
-		{
-			iLootCount = (int)fHoldRemaining;
-		}
-		if (iLootCount == 0)
-		{
-			uint LastTime;
-			if (last_time_of_notice.find(iClientID) == last_time_of_notice.end())
-				LastTime = 0;
-			else LastTime = last_time_of_notice[iClientID];
-
-			if (((uint)time(0) - LastTime) > 1)
-			{
-				PrintUserCmdText(iClientID, L"%s's cargo is now full.", reinterpret_cast<const wchar_t*>(Players.GetActiveCharacterName(iSendToClientID)));
-				pub::Player::SendNNMessage(iClientID, CreateID("insufficient_cargo_space"));
-				if (iClientID != iSendToClientID)
-				{
-					PrintUserCmdText(iSendToClientID, L"Your cargo is now full.");
-					pub::Player::SendNNMessage(iSendToClientID, CreateID("insufficient_cargo_space"));
-				}
-				last_time_of_notice[iClientID] = (uint)time(0);
-			}
-			return;
-		}
-
-		pub::Player::AddCargo(iSendToClientID, iLootID, iLootCount, 1.0, false);
-		mapMiningEvents[i->second].iObjectiveCurrent -= iLootCount;
-		wstring wscCharname = (const wchar_t*)Players.GetActiveCharacterName(iClientID);
-		mapEventTracking[i->second].PlayerEventData[wscCharname] += iLootCount;
-
-		if (mapMiningEvents[i->second].iObjectiveCurrent < 0)
-		{
-			mapMiningEvents[i->second].iObjectiveCurrent = 0;
-		}
-
-		return;
-	}
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Actual Code
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1414,9 +1305,6 @@ void HkTimerCheckKick()
 	{
 		ProcessEventData();
 		ProcessEventPlayerInfo();
-
-		map<uint, string> transfermap = HookExt::GetMiningEventObjs();
-		mapMiningSpaceObj = transfermap;
 	}
 
 }
@@ -1544,81 +1432,21 @@ void SendDeathMsg(const wstring &wscMsg, uint& iSystem, uint& iClientIDVictim, u
 
 }
 
-/*
-void __stdcall ShipDestroyed(DamageList *_dmg, DWORD *ecx, uint iKill)
-{
-	returncode = DEFAULT_RETURNCODE;
-	//CShip *cship = (CShip*)ecx[4];
 
-	//todo, combat event npc destruction
-}
-*/
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//Client command processing
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/*
-typedef bool(*_UserCmdProc)(uint, const wstring &, const wstring &, const wchar_t*);
-
-struct USERCMD
-{
-	wchar_t *wszCmd;
-	_UserCmdProc proc;
-	wchar_t *usage;
-};
-
-USERCMD UserCmds[] =
-{
-	{ L"/autobuy", UserCmd_AutoBuy, L"Usage: /autobuy" },
-	{ L"/autobuy*", UserCmd_AutoBuy, L"Usage: /autobuy" },
-};
-*/
-
-/*
-This function is called by FLHook when a user types a chat string. We look at the
-string they've typed and see if it starts with one of the above commands. If it
-does we try to process it.
-*/
-
-/*
-bool UserCmd_Process(uint iClientID, const wstring &wscCmd)
+void __stdcall ShipDestroyed(IObjRW* iobj, bool isKill, DamageList* dmgList)
 {
 	returncode = DEFAULT_RETURNCODE;
 
-	wstring wscCmdLineLower = ToLower(wscCmd);
+	CShip* cship = reinterpret_cast<CShip*>(iobj->cobj);
 
-	// If the chat string does not match the USER_CMD then we do not handle the
-	// command, so let other plugins or FLHook kick in. We require an exact match
-	for (uint i = 0; (i < sizeof(UserCmds) / sizeof(USERCMD)); i++)
+	if (cship->ownerPlayer)
 	{
-
-		if (wscCmdLineLower.find(UserCmds[i].wszCmd) == 0)
-		{
-			// Extract the parameters string from the chat string. It should
-			// be immediately after the command and a space.
-			wstring wscParam = L"";
-			if (wscCmd.length() > wcslen(UserCmds[i].wszCmd))
-			{
-				if (wscCmd[wcslen(UserCmds[i].wszCmd)] != ' ')
-					continue;
-				wscParam = wscCmd.substr(wcslen(UserCmds[i].wszCmd) + 1);
-			}
-
-			// Dispatch the command to the appropriate processing function.
-			if (UserCmds[i].proc(iClientID, wscCmd, wscParam, UserCmds[i].usage))
-			{
-				// We handled the command tell FL hook to stop processing this
-				// chat string.
-				returncode = SKIPPLUGINS_NOFUNCTIONCALL; // we handled the command, return immediatly
-				return true;
-			}
-		}
+		return;
 	}
-	return false;
+
+	//TODO: Implement npc rewards
 }
 
-*/
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Functions to hook
@@ -1638,9 +1466,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&CharacterSelect_AFTER, PLUGIN_HkIServerImpl_CharacterSelect_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodBuy_AFTER, PLUGIN_HkIServerImpl_GFGoodBuy_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodSell_AFTER, PLUGIN_HkIServerImpl_GFGoodSell_AFTER, 0));
-	//p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SendDeathMsg, PLUGIN_SendDeathMsg, 2));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SPMunitionCollision, PLUGIN_HkIServerImpl_SPMunitionCollision, 0));
 
 	return p_PI;
 }

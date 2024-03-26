@@ -315,7 +315,7 @@ void ObscureSystemList(uint clientId)
 	}
 	else
 	{
-		PrintUserCmdText(clientId, L"ERR unable to mask your system on playerlist, contact admins");
+		PrintUserCmdText(clientId, L"ERR unable to mask your system (%08x) on playerlist, contact admins", system);
 	}
 }
 
@@ -330,7 +330,7 @@ void RestoreSystemList(uint clientId)
 
 void SetState(uint iClientID, uint iShipID, int iNewState)
 {
-	auto& cloakInfo = mapClientsCloak[iClientID];
+	auto& cloakInfo = mapClientsCloak.at(iClientID);
 	if (cloakInfo.iState != iNewState)
 	{
 		if (cloakInfo.iState == STATE_CLOAK_ON || iNewState == STATE_CLOAK_ON)
@@ -712,9 +712,8 @@ void SetFuse(uint iClientID, uint fuse, float lifetime)
 
 bool UserCmd_Cloak(uint iClientID, const wstring &wscCmd, const wstring &wscParam, const wchar_t *usage)
 {
-	uint iShip;
-	pub::Player::GetShip(iClientID, iShip);
-	if (!iShip)
+	const CShip* cship = ClientInfo[iClientID].cship;
+	if (!cship)
 	{
 		PrintUserCmdText(iClientID, L"Not in space");
 		return true;
@@ -726,7 +725,7 @@ bool UserCmd_Cloak(uint iClientID, const wstring &wscCmd, const wstring &wscPara
 		return true;
 	}
 
-	auto& info = mapClientsCloak[iClientID];
+	auto& info = mapClientsCloak.at(iClientID);
 
 	if (info.DisruptTime != 0)
 	{
@@ -734,14 +733,13 @@ bool UserCmd_Cloak(uint iClientID, const wstring &wscCmd, const wstring &wscPara
 		return true;
 	}
 
-	uint type;
-	pub::SpaceObj::GetType(iShip, type);
+	uint type =	cship->archetype->iArchType;
 	
 	if (!(info.arch->availableShipClasses & type))
 	{
 		PrintUserCmdText(iClientID, L"Cloaking device will not function on this ship type");
 		info.iState = STATE_CLOAK_INVALID;
-		SetState(iClientID, iShip, STATE_CLOAK_OFF);
+		SetState(iClientID, cship->id, STATE_CLOAK_OFF);
 		return true;
 	}
 
@@ -750,14 +748,14 @@ bool UserCmd_Cloak(uint iClientID, const wstring &wscCmd, const wstring &wscPara
 	switch (info.iState)
 	{
 	case STATE_CLOAK_OFF:
-		SetState(iClientID, iShip, STATE_CLOAK_CHARGING);
+		SetState(iClientID, cship->id, STATE_CLOAK_CHARGING);
 		break;
 	case STATE_CLOAK_ON:
 	{
 		mstime now = timeInMS();
 		if ((info.tmCloakTime + info.arch->activationPeriod) < now)
 		{
-			SetState(iClientID, iShip, STATE_CLOAK_OFF);
+			SetState(iClientID, cship->id, STATE_CLOAK_OFF);
 		}
 		else
 		{
@@ -766,7 +764,7 @@ bool UserCmd_Cloak(uint iClientID, const wstring &wscCmd, const wstring &wscPara
 		break;
 	}
 	case STATE_CLOAK_CHARGING:
-		SetState(iClientID, iShip, STATE_CLOAK_OFF);
+		SetState(iClientID, cship->id, STATE_CLOAK_OFF);
 		break;
 	}
 	
@@ -854,51 +852,12 @@ struct USERCMD
 	wchar_t *usage;
 };
 
-typedef IObjRW* (*vtableLooker)(uint);
-const vtableLooker lol = vtableLooker(0x6D00670);
-bool UserCmd_Zzz(uint iClientID, const wstring& wscCmd, const wstring& wscParam, const wchar_t* usage)
-{
-	CShip* ship = ClientInfo[iClientID].cship;
-	if (!ship)
-	{
-		return true;
-	}
-	//IObjRW* target = ship->target;
-	
-	//uint targetId;
-	//pub::SpaceObj::GetTarget(Players[iClientID].iShipID, targetId);
-	//IObjRW* target = lol(targetId);
-
-	CProjectile* targetId = (CProjectile*)CObject::FindFirst(CObject::CEQUIPMENT_OBJECT);
-	if (!targetId)
-	{
-		return true;
-	}
-	IObjRW* target = lol(targetId->id);
-	if (target)
-	{
-		PrintUserCmdText(iClientID, L"%08x - %08x", *(uint*)target, target->cobject()->objectClass);
-		ConPrint(L"%08x - %08x\n", (uint)target, target->cobject()->objectClass);
-	}
-	else
-	{
-		IObjInspectImpl* impl;
-		uint dummy = 0;
-		GetShipInspect(Players[iClientID].iShipID, impl, dummy);
-		uint info = impl->cobject()->objectClass;
-		PrintUserCmdText(iClientID, L"%08x - %08x", *(uint*)impl, info);
-		ConPrint(L"%08x - %08x\n", *(uint*)impl, info);
-	}
-	return true;
-}
-
 USERCMD UserCmds[] =
 {
 	{ L"/cloak", UserCmd_Cloak, L"Usage: /cloak"},
 	{ L"/cloak*", UserCmd_Cloak, L"Usage: /cloak"},
 	{ L"/disruptor", UserCmd_Disruptor, L"Usage: /disruptor"},
 	{ L"/disruptor*", UserCmd_Disruptor, L"Usage: /disruptor"},
-	{ L"/zzz", UserCmd_Zzz, L"Usage: /disruptor"},
 
 };
 
@@ -1026,7 +985,7 @@ void __stdcall JumpInComplete_AFTER(unsigned int iSystem, unsigned int iShip)
 
 	if (iClientID)
 	{
-		jumpingPlayers[iClientID] = 4;
+		jumpingPlayers[iClientID] = 5;
 		if (mapClientsCloak[iClientID].iState == STATE_CLOAK_CHARGING)
 		{
 			SetState(iClientID, iShip, STATE_CLOAK_OFF);

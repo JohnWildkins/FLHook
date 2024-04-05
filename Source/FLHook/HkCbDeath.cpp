@@ -18,6 +18,12 @@ Send "Death: ..." chat-message
 
 void SendDeathMsg(const wstring &wscMsg, uint iSystemID, uint iClientIDVictim, uint iClientIDKiller)
 {
+	// skip processing if no cship, some ships can trigger this hook multiple times
+	if (!ClientInfo[iClientIDVictim].cship)
+	{
+		return;
+	}
+
 	ClientInfo[iClientIDVictim].cship = nullptr;
 
 	CALL_PLUGINS_V(PLUGIN_SendDeathMsg, , (const wstring&, uint&, uint&, uint&), (wscMsg, iSystemID, iClientIDVictim, iClientIDKiller));
@@ -406,42 +412,4 @@ __declspec(naked) void SolarColGrpDestroyedHookNaked()
 		mov eax, [ColGrpDeathOrigFunc]
 		jmp eax
 	}
-}
-
-/**************************************************************************************************************
-Called when base was destroyed
-**************************************************************************************************************/
-
-void BaseDestroyed(uint iObject, uint iClientIDBy)
-{
-	LOG_CORE_TIMER_START
-	TRY_HOOK
-	CALL_PLUGINS_V(PLUGIN_BaseDestroyed, , (uint, uint), (iObject, iClientIDBy));
-
-	uint iID;
-	pub::SpaceObj::GetDockingTarget(iObject, iID);
-	Universe::IBase *base = Universe::get_base(iID);
-
-	char *szBaseName = "";
-	if (base)
-	{
-		__asm
-		{
-			pushad
-			mov ecx, [base]
-			mov eax, [base]
-			mov eax, [eax]
-			call[eax + 4]
-			mov[szBaseName], eax
-			popad
-		}
-	}
-
-	ProcessEvent(L"basedestroy basename=%s basehash=%u solarhash=%u by=%s",
-		stows(szBaseName).c_str(),
-		iObject,
-		iID,
-		(wchar_t*)Players.GetActiveCharacterName(iClientIDBy));
-	CATCH_HOOK({})
-	LOG_CORE_TIMER_END
 }

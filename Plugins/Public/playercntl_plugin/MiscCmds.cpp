@@ -875,7 +875,7 @@ namespace MiscCmds
 
 	void AdminCmd_PlaySound(CCmds* cmds, const wstring &wscSoundname)
 	{
-		if (cmds->rights != RIGHT_SUPERADMIN)
+		if (!(cmds->rights & RIGHT_BEAMKILL))
 		{
 			cmds->Print(L"ERR No permission\n");
 			return;

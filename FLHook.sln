@@ -117,6 +117,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Voice_mgr", "Plugins\Public
 		{81D33B95-1DDD-4F58-A24C-E2EC4A143DD0} = {81D33B95-1DDD-4F58-A24C-E2EC4A143DD0}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MarketController", "Plugins\Public\MarketController\MarketController.vcxproj", "{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -439,6 +441,18 @@ Global
 		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Release|Win32.Build.0 = Release|Win32
 		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Release|x64.ActiveCfg = Release|Win32
 		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744}.Release|x64.Build.0 = Release|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Debug|Win32.ActiveCfg = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Debug|Win32.Build.0 = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Debug|x64.ActiveCfg = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Debug|x64.Build.0 = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.DebugDONOTUSE|Win32.ActiveCfg = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.DebugDONOTUSE|Win32.Build.0 = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.DebugDONOTUSE|x64.ActiveCfg = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.DebugDONOTUSE|x64.Build.0 = Debug|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Release|Win32.ActiveCfg = Release|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Release|Win32.Build.0 = Release|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Release|x64.ActiveCfg = Release|Win32
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22}.Release|x64.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -474,11 +488,13 @@ Global
 		{209E8482-B6B8-4CF8-B117-B93BE1B9E72D} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
 		{985915AF-E158-45E7-BBDD-BCD4642E5574} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
 		{55FDEA3D-7F65-4A84-A0C6-1FFD3B4F6744} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
+		{01AC67E5-0A10-42FA-9D7D-03A3EDD97C22} = {F77D3998-A163-4D75-95E3-88C3C6B2DCFA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {393C1DF6-B2DC-4FF2-8100-36DD1F304E10}
 	EndGlobalSection
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		Plugins\PluginUtilities\PluginUtilities.vcxitems*{01ac67e5-0a10-42fa-9d7d-03a3edd97c22}*SharedItemsImports = 4
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{097bffbb-2bbe-4e16-b2fb-3ed8e90ecbd7}*SharedItemsImports = 4
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{22d02598-f2d3-495f-bba9-72dc156da723}*SharedItemsImports = 4
 		Plugins\PluginUtilities\PluginUtilities.vcxitems*{2853796f-8aaf-4e93-a210-08ea11c63d6b}*SharedItemsImports = 4

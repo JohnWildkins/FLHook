@@ -29,7 +29,6 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 unordered_map <uint, wstring> shipclassnames;
-unordered_map <uint, wstring> itemnames;
 unordered_map <uint, scistruct> shipclassitems;
 unordered_map <uint, wstring> owned;
 
@@ -81,16 +80,6 @@ void SCI::LoadSettings()
 					if (ini.is_value("class"))
 					{
 						shipclassnames[ini.get_value_int(0)] = stows(ini.get_value_string(1));
-					}
-				}
-			}
-			else if (ini.is_header("itemnames"))
-			{
-				while (ini.read_value())
-				{
-					if (ini.is_value("item"))
-					{
-						itemnames[CreateID(ini.get_value_string(0))] = stows(ini.get_value_string(1));
 					}
 				}
 			}
@@ -207,9 +196,9 @@ void SCI::CheckItems(unsigned int iClientID)
 		// find if the ship class match
 		if (!shipClassItem.canmount.count(TheShipArch->iShipClass))
 		{
-			//PrintUserCmdText(iClientID, L"DEBUG: Tagged for ownage");
+			const GoodInfo* gi = GoodList::find_by_id(item->iArchID);
 			wstring wscMsg = L"ERR you can't undock with %item mounted. This item can't be mounted on a %shipclass.";
-			wscMsg = ReplaceStr(wscMsg, L"%item", itemnames.find(item->iArchID)->second.c_str());
+			wscMsg = ReplaceStr(wscMsg, L"%item", HkGetWStringFromIDS(gi->iIDSName).c_str());
 			wscMsg = ReplaceStr(wscMsg, L"%shipclass", classname.c_str());
 			owned[iClientID] = wscMsg;
 			StoreReturnPointForClient(iClientID);
@@ -226,9 +215,11 @@ void SCI::CheckItems(unsigned int iClientID)
 			// find if a mounted item match the non-stack list
 			if (shipClassItem.nomount.count(TheShipArch->iShipClass))
 			{
+				const GoodInfo* gi1 = GoodList::find_by_id(item->iArchID);
+				const GoodInfo* gi2 = GoodList::find_by_id(itemstack->iArchID);
 				wstring wscMsg = L"ERR You are not allowed to have %item and %second mounted at the same time.";
-				wscMsg = ReplaceStr(wscMsg, L"%item", itemnames.find(item->iArchID)->second.c_str());
-				wscMsg = ReplaceStr(wscMsg, L"%second", itemnames.find(itemstack->iArchID)->second.c_str());
+				wscMsg = ReplaceStr(wscMsg, L"%item", HkGetWStringFromIDS(gi1->iIDSName).c_str());
+				wscMsg = ReplaceStr(wscMsg, L"%second", HkGetWStringFromIDS(gi2->iIDSName).c_str());
 				owned[iClientID] = wscMsg;
 				StoreReturnPointForClient(iClientID);
 				return;

@@ -19,9 +19,6 @@
 #include <float.h>
 #include <FLHook.h>
 #include <plugin.h>
-#include <list>
-#include <set>
-#include <unordered_set>
 #include <sstream>
 #include <iostream>
 
@@ -34,7 +31,7 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static unordered_set<uint> idlist;
-static set<uint> listAllowedShips;
+static unordered_set<uint> listAllowedShips;
 static map<uint, wstring> MapActiveSirens;
 
 static int duration = 60;
@@ -359,38 +356,23 @@ bool ADOCK::PoliceCmd(uint iClientID, const wstring &wscCmd, const wstring &wscP
 		return true;
 	}
 
-	bool isAllowed = false;
-
-	list<uint>::iterator iter = listAllowedShips.begin();
-	while (iter != listAllowedShips.end())
-	{
-		if (*iter == iClientID)
-		{
-			isAllowed = true;
-			break;
-		}
-		iter++;
-	}
-
-	if (isAllowed == false)
+	if (!listAllowedShips.count(iClientID))
 	{
 		PrintUserCmdText(iClientID, L"You are not allowed to use this.");
 		return true;
 	}
-	if (isAllowed == true)
+
+	if (MapActiveSirens.find(iClientID) != MapActiveSirens.end())
 	{
-		if (MapActiveSirens.find(iClientID) != MapActiveSirens.end())
-		{
-			UnSetFuse(iClientID, CreateID("dsy_police_liberty"));
-			MapActiveSirens.erase(iClientID);
-			PrintUserCmdText(iClientID, L"Police system deactivated.");
-		}
-		else
-		{
-			SetFuse(iClientID, CreateID("dsy_police_liberty"), 999999);
-			MapActiveSirens[iClientID] = L"test";
-			PrintUserCmdText(iClientID, L"Police system activated.");
-		}
+		UnSetFuse(iClientID, CreateID("dsy_police_liberty"));
+		MapActiveSirens.erase(iClientID);
+		PrintUserCmdText(iClientID, L"Police system deactivated.");
+	}
+	else
+	{
+		SetFuse(iClientID, CreateID("dsy_police_liberty"), 999999);
+		MapActiveSirens[iClientID] = L"test";
+		PrintUserCmdText(iClientID, L"Police system activated.");
 	}
 
 	return true;

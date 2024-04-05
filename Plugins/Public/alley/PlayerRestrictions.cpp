@@ -327,7 +327,7 @@ void LoadSettings()
 					}
 					else if (ini.is_value("multiplier"))
 					{
-						multiplier = ini.get_value_float(0);
+						multiplier = ini.get_value_float(0) * 0.01f;
 					}
 					else if (ini.is_value("max_heal"))
 					{
@@ -1089,7 +1089,7 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring &wscCmd)
 	return false;
 }
 
-void __stdcall SolarDamageHull(IObjRW* iobj, float incDmg, DamageList* dmg)
+void __stdcall ShipDamageHull(IObjRW* iobj, float& incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
 
@@ -1098,25 +1098,30 @@ void __stdcall SolarDamageHull(IObjRW* iobj, float incDmg, DamageList* dmg)
 		|| !dmg->iInflictorPlayerID)
 		return;
 
-	CShip* cship = (CShip*)iobj->cobj;
+	CShip* cship = reinterpret_cast<CShip*>(iobj->cobj);
 
 	const Archetype::Ship* TheShipArchHealed = cship->shiparch();
 
 	const auto& healingData = healingMultipliers.find(TheShipArchHealed->iShipClass);
 	if (healingData == healingMultipliers.end())
+	{
+		incDmg = 0;
 		return;
-
-	float curr = cship->hitPoints;
+	}
+	float currHP = cship->hitPoints;
 	float maxHP = cship->archetype->fHitPoints;
 
 	const HEALING_DATA& healing = healingData->second;
 
-	if (curr >= healing.maxHeal * maxHP)
+	float maxPossibleHealing = (maxHP * healing.maxHeal) - currHP;
+
+	if (maxPossibleHealing <= 0.0f)
+	{
+		incDmg = 0;
 		return;
-
-	float healedHP = curr + healing.healingStatic + ((healing.healingMultiplier / 100) * maxHP) ;
-	dmg->add_damage_entry(1, min(maxHP * healing.maxHeal, healedHP), (DamageEntry::SubObjFate) 0);
-
+	}
+	float healedHP = healing.healingStatic + (healing.healingMultiplier * maxHP);
+	incDmg = -min(maxPossibleHealing, healedHP);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Actual Code
@@ -1405,7 +1410,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkTimerCheckKick, PLUGIN_HkTimerCheckKick, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SolarDamageHull, PLUGIN_HkCb_AddDmgEntry, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ShipDamageHull, PLUGIN_ShipHullDmg, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&JettisonCargo, PLUGIN_HkIServerImpl_JettisonCargo, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&AddTradeEquip, PLUGIN_HkIServerImpl_AddTradeEquip, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&GFGoodBuy, PLUGIN_HkIServerImpl_GFGoodBuy, 0));

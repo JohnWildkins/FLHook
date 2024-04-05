@@ -176,7 +176,7 @@ void UserCmd_SetDeathMsg(const uint client, const wstring& wscParam)
 	PrintUserCmdText(client, L"OK");
 }
 
-void __stdcall AddDamageEntry(IObjRW* iobj, float& incDmg, DamageList* dmg)
+void __stdcall ShipHullDamage(IObjRW* iobj, float& incDmg, DamageList* dmg)
 {
 	returncode = DEFAULT_RETURNCODE;
 	if (dmg->iInflictorPlayerID)
@@ -525,7 +525,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->ePluginReturnCode = &returncode;
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&LoadSettings, PLUGIN_LoadSettings, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&AddDamageEntry, PLUGIN_ShipHullDmg, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ShipHullDamage, PLUGIN_ShipHullDmg, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SendDeathMessage, PLUGIN_SendDeathMsg, 5));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&DelayedDisconnect, PLUGIN_DelayedDisconnect, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Disconnect, PLUGIN_HkIServerImpl_DisConnect, 0));

@@ -437,7 +437,7 @@ void DockShipOnCarrier(uint dockingID, uint carrierID)
 	if (!shipAlreadyDocked && mobiledockClients[carrierID].iDockingModulesAvailable == 0)
 	{
 		PrintUserCmdText(dockingID, L"Carrier has no free docking capacity");
-		pub::Player::SendNNMessage(dockingID, pub::GetNicknameId("info_access_denied"));
+		pub::Player::SendNNMessage(dockingID, pub::GetNicknameId("nnv_no_docking_modules"));
 		return;
 	}
 	// Save the carrier info
@@ -481,6 +481,8 @@ void HkTimerCheckKick()
 			auto dockingName = reinterpret_cast<const wchar_t*>(Players.GetActiveCharacterName(dd.dockingID));
 			PrintUserCmdText(dd.dockingID, L"Docking aborted due to your movement");
 			PrintUserCmdText(dd.carrierID, L"Docking aborted due to %ls's movement", dockingName);
+			pub::Player::SendNNMessage(dd.dockingID, pub::GetNicknameId("nnv_mobile_dock_interrupt"));
+			pub::Player::SendNNMessage(dd.carrierID, pub::GetNicknameId("nnv_mobile_dock_interrupt"));
 			dockdata = dockingInProgress.erase(dockdata);
 			continue;
 		}
@@ -492,6 +494,8 @@ void HkTimerCheckKick()
 		{
 			PrintUserCmdText(dd.dockingID, L"Docking aborted due to carrier movement");
 			PrintUserCmdText(dd.carrierID, L"Docking aborted due to carrier movement");
+			pub::Player::SendNNMessage(dd.dockingID, pub::GetNicknameId("nnv_mobile_dock_interrupt"));
+			pub::Player::SendNNMessage(dd.carrierID, pub::GetNicknameId("nnv_mobile_dock_interrupt"));
 			dockdata = dockingInProgress.erase(dockdata);
 			continue;
 		}
@@ -508,6 +512,8 @@ void HkTimerCheckKick()
 				auto dockingName = reinterpret_cast<const wchar_t*>(Players.GetActiveCharacterName(dd.dockingID));
 				PrintUserCmdText(dd.dockingID, L"Docking aborted due to your movement");
 				PrintUserCmdText(dd.carrierID, L"Docking aborted due to %ls's movement", dockingName);
+				pub::Player::SendNNMessage(dd.dockingID, pub::GetNicknameId("nnv_mobile_dock_interrupt"));
+				pub::Player::SendNNMessage(dd.carrierID, pub::GetNicknameId("nnv_mobile_dock_interrupt"));
 				dockdata = dockingInProgress.erase(dockdata);
 				continue;
 			}
@@ -625,6 +631,8 @@ void StartDockingProcedure(uint dockingID, uint carrierID)
 		dockingInProgress[dockingID] = dd;
 		wstring dockingName = reinterpret_cast<const wchar_t*>(Players.GetActiveCharacterName(dockingID));
 		wstring carrierName = reinterpret_cast<const wchar_t*>(Players.GetActiveCharacterName(carrierID));
+		pub::Player::SendNNMessage(dd.dockingID, pub::GetNicknameId("nnv_mobile_dock_start"));
+		pub::Player::SendNNMessage(dd.carrierID, pub::GetNicknameId("nnv_mobile_dock_start"));
 		wstring message = dockingName + L" has begun docking on " + carrierName;
 		PrintLocalUserCmdText(dockingID, message, 10000);
 	}
@@ -942,8 +950,8 @@ int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &iTargetID, 
 		
 		if (!CanDockOnCarrier(client, iTargetClientID))
 		{
-
 			PrintUserCmdText(client, L"Target ship has no free docking capacity");
+			pub::Player::SendNNMessage(client, pub::GetNicknameId("nnv_no_docking_modules"));
 			dockPort = -1;
 			response = DOCK_DENIED;
 			return 0;
@@ -1216,6 +1224,11 @@ void __stdcall CharacterSelect_AFTER(struct CHARACTER_ID const & cId, unsigned i
 	}
 	else if (nameToDockedInfoMap.count(charname))
 	{
+		if (Players[iClientID].iLastBaseID != mobileDockingProxyBase)
+		{
+			RemoveShipFromLists(charname, false);
+		}
+
 		idToDockedInfoMap[iClientID] = &nameToDockedInfoMap[charname];
 		uint carrierClientID = HkGetClientIdFromCharname(idToDockedInfoMap[iClientID]->carrierName.c_str());
 		if (carrierClientID != -1)

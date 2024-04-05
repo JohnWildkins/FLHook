@@ -80,13 +80,16 @@ struct ARCHTYPE_STRUCT
 
 struct MARKET_ITEM
 {
-	MARKET_ITEM() : quantity(0), price(1.0f), min_stock(100000), max_stock(100000), is_public(false) {}
+	MARKET_ITEM() : quantity(0), price(1), sellPrice(1), min_stock(100000), max_stock(100000), is_public(false) {}
 
 	// Number of units of commodity stored in this base
 	uint quantity;
 
-	// Buy/Sell price for commodity.
-	float price;
+	// Buy price for commodity.
+	int price;
+
+	// Sell price for commodity.
+	int sellPrice;
 
 	// Stop selling if the base holds less than this number of items
 	uint min_stock;
@@ -302,7 +305,7 @@ public:
 	bool AddMarketGood(uint good, uint quantity);
 	void RemoveMarketGood(uint good, uint quantity);
 	void ChangeMoney(INT64 quantity);
-	uint GetRemainingCargoSpace();
+	int GetRemainingCargoSpace();
 	void RecalculateCargoSpace();
 	uint HasMarketItem(uint good);
 
@@ -337,6 +340,8 @@ public:
 	string baseloadout;
 	// The name of the base shown to other players
 	wstring basename;
+
+	wstring description_text;
 
 	// The infocard for the base
 	wstring infocard;
@@ -375,6 +380,9 @@ public:
 
 	// When the base is spawned, this is the IDS of the base name
 	uint solar_ids;
+
+	// Space F9 info
+	uint description_ids;
 
 	// The ingame hash of the nickname
 	uint base;
@@ -443,7 +451,7 @@ public:
 	bool isShieldOn;
 
 	// The number of seconds that shield will be active
-	int shield_timeout;
+	uint shield_timeout;
 
 	int logic;
 	int invulnerable;
@@ -494,6 +502,8 @@ void SendBaseStatus(uint client, PlayerBase* base);
 void SendBaseStatus(PlayerBase* base);
 void ForceLaunch(uint client);
 void SendJumpObjOverride(uint client, uint jumpObjId, uint newTargetSystem);
+wstring BuildBaseDescription(PlayerBase* base);
+void SendBaseIDSList(uint client, uint solarId, uint ids);
 
 struct CLIENT_DATA
 {

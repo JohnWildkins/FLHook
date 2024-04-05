@@ -1025,6 +1025,10 @@ int __cdecl Dock_Call(unsigned int const &iShip, unsigned int const &iDockTarget
 				HkAddCheaterLog(wscCharname, L"About to enter a JG/JH while under cloak charging mode");
 				return 0;
 			}
+			else if (mapClientsCloak[client].iState == STATE_CLOAK_ON)
+			{
+				jumpingPlayers[client] = 20;
+			}
 		}
 	}
 
@@ -1062,17 +1066,6 @@ void SwitchOutComplete(uint ship, uint clientId)
 	}
 }
 
-void __stdcall SystemSwitchOut(uint iClientID, FLPACKET_SYSTEM_SWITCH_OUT& switchOutPacket)
-{
-	returncode = DEFAULT_RETURNCODE;
-
-	// in case of SERVER_PACKET hooks, first argument is junk data before it gets processed by the server. 
-	uint packetClient = HkGetClientIDByShip(switchOutPacket.shipId);
-	if (packetClient)
-	{
-		jumpingPlayers[packetClient] = 1000;
-	}
-}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /** Functions to hook */
@@ -1096,7 +1089,6 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&JumpInComplete_AFTER, PLUGIN_HkIServerImpl_JumpInComplete_AFTER, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Dock_Call, PLUGIN_HkCb_Dock_Call, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SwitchOutComplete, PLUGIN_HkIServerImpl_SystemSwitchOutComplete_AFTER, 0));
-	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&SystemSwitchOut, PLUGIN_HkIClientImpl_Send_FLPACKET_SERVER_SYSTEM_SWITCH_OUT, 0));
 	
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&Plugin_Communication_CallBack, PLUGIN_Plugin_Communication, 0));
 

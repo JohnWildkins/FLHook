@@ -43,6 +43,8 @@
 #include <PluginUtilities.h>
 #include <array>
 
+static const uint DESTRUCTION_TIMER = 180;
+
 static int set_iPluginDebug = 0;
 static string set_scStatsPath;
 static float set_miningCheatLogThreshold = 2.0f;
@@ -50,7 +52,6 @@ static uint set_miningMunition = CreateID("mining_gun_ammo");
 static uint set_deployableContainerCommodity = CreateID("commodity_deployable_container");
 static float set_globalModifier = 1.0f;
 static float set_containerModifier = 1.05f;
-static array<float, 25> set_shipClassModifiers; // using a simple array for optimization purposes
 static uint set_containerJettisonCount = 5000;
 static uint set_containerLootCrateID = CreateID("lootcrate_ast_loot_metal");
 static uint set_containerSolarArchetypeID = CreateID("dsy_playerbase_01");
@@ -93,10 +94,27 @@ struct NodeInfo
 	string nickname;
 };
 
+struct MiningBonus
+{
+	float bonusStandard = 1.0f;
+	float bonusAsteroidNodes = 1.0f;
+	float bonusAsteroidDestruction = 1.0f;
+};
+
+enum class MiningType
+{
+	DynamicAsteroid,
+	StaticAsteroidNode,
+	StaticAsteroidCode
+};
+
 unordered_map<uint, unordered_map<uint, float>> idBonusMap;
 unordered_map<uint, array<MiningNodeInfo, 32>> miningSolarMap;
+static array<MiningBonus, 25> set_shipClassModifiers; // using a simple array for optimization purposes
 vector<MiningSpawnPointDB> miningDB;
 unordered_map<uint, NodeInfo> miningNodeMap;
+
+unordered_map<uint, uint> pendingDestructionNodes;
 
 struct ZONE_BONUS
 {
@@ -160,7 +178,7 @@ struct CLIENT_DATA
 	uint lastValidPlayerId = 0;
 	uint lastValidContainerId = 0;
 	CONTAINER_DATA* lastValidContainer = nullptr;
-	uint shipclass = 0;
+	MiningBonus shipClassMiningBonus;
 
 	uint LastTimeMessageAboutBeingFull = 0;
 };
@@ -201,7 +219,7 @@ void CheckClientSetup(const uint iClientID)
 		}
 	}
 
-	mapClients[iClientID].shipclass = Archetype::GetShip(Players[iClientID].iShipArchetype)->iShipClass;
+	mapClients[iClientID].shipClassMiningBonus = set_shipClassModifiers[Archetype::GetShip(Players[iClientID].iShipArchetype)->iShipClass];
 }
 
 void DestroyContainer(const uint clientID)
@@ -307,6 +325,22 @@ EXPORT void HkTimerCheckKick()
 		}
 	}
 
+	if (currTime % 30 == 0 && !pendingDestructionNodes.empty())
+	{	
+		for (auto damagedNode = pendingDestructionNodes.begin() ; damagedNode != pendingDestructionNodes.end() ; )
+		{
+			if (currTime > damagedNode->second)
+			{
+				pub::SpaceObj::Destroy(damagedNode->first, DestroyType::FUSE);
+				damagedNode = pendingDestructionNodes.erase(damagedNode);
+			}
+			else
+			{
+				damagedNode++;
+			}
+		}
+	}
+
 	for (auto& entry : miningDB)
 	{
 		if (entry.spawnedNodesCount >= entry.maxSpawnCount)
@@ -342,8 +376,6 @@ EXPORT void LoadSettings()
 	GetCurrentDirectory(sizeof(szCurDir), szCurDir);
 	string scPluginCfgFile = string(szCurDir) + "\\flhook_plugins\\minecontrol.cfg";
 	string solarArchFile = string(szCurDir) + "..\\DATA\\SOLAR\\solararch.ini";
-
-	set_shipClassModifiers.fill(1.0f);
 
 	// Load generic settings
 	set_iPluginDebug = IniGetI(scPluginCfgFile, "MiningGeneral", "Debug", 0);
@@ -457,7 +489,7 @@ EXPORT void LoadSettings()
 				{
 					if (ini.is_value("ship_class_bonus"))
 					{
-						set_shipClassModifiers[ini.get_value_int(0)] = ini.get_value_float(1);
+						set_shipClassModifiers[ini.get_value_int(0)] = { ini.get_value_float(1),ini.get_value_float(2),ini.get_value_float(3) };
 					}
 				}
 			}
@@ -704,9 +736,8 @@ void __stdcall SPMunitionCollision(struct SSPMunitionCollisionInfo const & ci, u
 			miningYield = max(miningYield, zoneData.fCurrReserve);
 			finalZone = &zoneData; // save ZONE_BONUS ref to update AFTER all the bonuses are applied
 		}
-		uint shipClass = cd.shipclass;
 
-		miningYield *= GetMiningYieldBonus(cd.equippedID, lootId) * set_globalModifier * set_shipClassModifiers[shipClass];
+		miningYield *= GetMiningYieldBonus(cd.equippedID, lootId) * set_globalModifier * cd.shipClassMiningBonus.bonusStandard;
 		miningYield += cd.overminedFraction; // add the decimal remainder from last mining event.
 
 		if (finalZone)
@@ -1048,6 +1079,37 @@ void __stdcall BaseEnter(uint base, uint iClientID)
 	}
 }
 
+void PlayerLaunch_AFTER(uint shipID, uint clientID)
+{
+	mapClients.erase(clientID);
+}
+
+float rand_FloatRange(float a, float b)
+{
+	return ((b - a) * ((float)rand() / RAND_MAX)) + a;
+}
+
+uint GetAsteroidMiningYield(const MiningNodeInfo& node, uint clientId, bool isNode)
+{
+	CLIENT_DATA& cd = mapClients[clientId];
+	if (!cd.initialized)
+	{
+		cd.initialized = true;
+		CheckClientSetup(clientId);
+	}
+	float miningBonus = GetMiningYieldBonus(cd.equippedID, node.itemArchId);
+	float droppedAmount = rand_FloatRange(node.countMin, node.countMax) * miningBonus;
+	if (isNode)
+	{
+		droppedAmount *= cd.shipClassMiningBonus.bonusAsteroidNodes;
+	}
+	else
+	{
+		droppedAmount *= cd.shipClassMiningBonus.bonusAsteroidDestruction;
+	}
+	return static_cast<uint>(droppedAmount);
+}
+
 void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 {
 	returncode = DEFAULT_RETURNCODE;
@@ -1073,36 +1135,29 @@ void __stdcall BaseDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 	}
 	if (miningNodeMap.count(space_obj))
 	{
+		uint clientKiller = HkGetClientIDByShip(killerId);
+		if (clientKiller)
+		{
+			CLIENT_DATA& cd = mapClients[clientKiller];
+			if (!cd.initialized)
+			{
+				cd.initialized = true;
+				CheckClientSetup(clientKiller);
+			}
+
+			auto& nodeArray = miningSolarMap.at(iobj->cobj->archetype->iArchID);
+			const MiningNodeInfo& node = nodeArray.at(1);
+			uint minedAmount = GetAsteroidMiningYield(node, clientKiller, false);
+			Server.MineAsteroid(iobj->cobj->system, iobj->get_position(), node.lootArchId, node.itemArchId, minedAmount, 0);
+			ConPrint(L"BodyDrop %u\n", clientKiller);
+		}
+
 		auto& nodeDb = miningNodeMap.at(space_obj);
 		nodeDb.miningDB->spawnedNodesCount--;
 		nodeDb.miningDB->positions.push_back(iobj->cobj->vPos);
 		nodeDb.miningDB->nicknamesVector.emplace_back(nodeDb.nickname);
 		miningNodeMap.erase(space_obj);
 	}
-}
-
-void PlayerLaunch_AFTER(uint shipID, uint clientID)
-{
-	mapClients.erase(clientID);
-}
-
-float rand_FloatRange(float a, float b)
-{
-	return ((b - a) * ((float)rand() / RAND_MAX)) + a;
-}
-
-uint GetNodeMiningYield(const MiningNodeInfo& node, uint clientId)
-{
-	CLIENT_DATA& cd = mapClients[clientId];
-	if (!cd.initialized)
-	{
-		cd.initialized = true;
-		CheckClientSetup(clientId);
-	}
-	float miningBonus = GetMiningYieldBonus(cd.equippedID, node.itemArchId);
-	float droppedAmount = rand_FloatRange(node.countMin, node.countMax) * miningBonus;
-
-	return static_cast<uint>(droppedAmount);
 }
 
 void SolarColGrpDestroyed(IObjRW* iobj, CArchGroup* colGrp, DamageEntry::SubObjFate fate, DamageList* dmg)
@@ -1117,6 +1172,12 @@ void SolarColGrpDestroyed(IObjRW* iobj, CArchGroup* colGrp, DamageEntry::SubObjF
 	{
 		return;
 	}
+
+	if (!pendingDestructionNodes.count(iobj->get_id()))
+	{
+		pendingDestructionNodes[iobj->get_id()] = (uint)time(0) + DESTRUCTION_TIMER;
+	}
+
 	auto& nodeArray = miningSolarMap.at(iobj->cobj->archetype->iArchID);
 	const MiningNodeInfo& node = nodeArray.at(colGrp->colGrp->id);
 	if (!node.itemArchId)
@@ -1126,7 +1187,7 @@ void SolarColGrpDestroyed(IObjRW* iobj, CArchGroup* colGrp, DamageEntry::SubObjF
 	Vector colGrpCenter;
 	colGrp->GetCenterOfMass(colGrpCenter);
 
-	uint minedAmount = GetNodeMiningYield(node, dmg->iInflictorPlayerID);
+	uint minedAmount = GetAsteroidMiningYield(node, dmg->iInflictorPlayerID, true);
 
 	Server.MineAsteroid(iobj->cobj->system, colGrpCenter, node.lootArchId, node.itemArchId, minedAmount, 0);
 

@@ -1011,6 +1011,7 @@ namespace HyperJump
 					jd.matTargetOrient = coords.ornt;
 
 					PrintUserCmdText(iClientID, L"Blind jump charging...");
+					pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_blind_jump_charging"));
 					return true;
 				}
 			}
@@ -1184,12 +1185,30 @@ namespace HyperJump
 								ShutdownJumpDrive(iClientID);
 								continue;
 							}
-							SetFuse(jd.targetClient, mapPlayerBeaconMatrix[jd.targetClient].arch->beaconFuse, mapPlayerBeaconMatrix[jd.targetClient].arch->beaconLifetime, 0);
+							PlayerData* pd = nullptr;
+							uint systemId = Players[jd.targetClient].iSystemID;
 							wstring beaconPlayer = reinterpret_cast<const wchar_t*>(Players.GetActiveCharacterName(jd.targetClient));
 							wstring playerName = L"Hyperspace breach is forming around %player!";
 							playerName = ReplaceStr(playerName, L"%player", beaconPlayer);
-							PrintLocalUserCmdText(jd.targetClient, playerName, 10000);
+							while (Players.traverse_active(pd))
+							{
+								if (pd->iSystemID != systemId)
+								{
+									continue;
+								}
+								if (15000.0f < HkDistance3D(ClientInfo[pd->iOnlineID].cship->vPos,
+									ClientInfo[jd.targetClient].cship->vPos))
+								{
+									continue;
+								}
+								PrintUserCmdText(pd->iOnlineID, playerName);
+								pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_beacon_jump_detected"));
+
+							}
+							SetFuse(jd.targetClient, mapPlayerBeaconMatrix[jd.targetClient].arch->beaconFuse, mapPlayerBeaconMatrix[jd.targetClient].arch->beaconLifetime, 0);
+							
 						}
+						pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_jumpdrive_charging_complete"));
 					}
 					// Execute the jump and do the pop sound
 					else if (jd.jump_timer == 0)
@@ -1256,6 +1275,7 @@ namespace HyperJump
 						}
 
 						CreateJumpHolePair(iClientID);
+						pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_jumpdrive_activated"));
 					}
 
 					// Proceed to the next ship.
@@ -1285,8 +1305,6 @@ namespace HyperJump
 								if ((jd.curr_charge < jd.arch->can_jump_charge)
 									&& (jd.curr_charge + jd.arch->charge_rate >= jd.arch->can_jump_charge))
 								{
-									PrintUserCmdText(iClientID, L"Jump drive charging complete, initiating jump sequence");
-									pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_jumpdrive_charging_complete"));
 									jd.jump_timer = 6;
 								}
 								jd.curr_charge += jd.arch->charge_rate;
@@ -1679,6 +1697,7 @@ namespace HyperJump
 			{
 				ShutdownJumpDrive(iClientID);
 				PrintUserCmdText(iClientID, L"Jump Drive disabled");
+				pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_jump_drive_disrupted"));
 			}
 			else
 			{
@@ -1762,6 +1781,7 @@ namespace HyperJump
 				if (dmg->get_cause() == DamageCause::CruiseDisrupter || dmg->get_cause() == DamageCause::UnkDisrupter)
 				{
 					PrintUserCmdText(iClientID, L"Jump drive disrupted. Charging failed.");
+					pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_jump_drive_disrupted"));
 					ShutdownJumpDrive(iClientID);
 				}
 			}
@@ -1830,7 +1850,9 @@ namespace HyperJump
 		jd.jumpDistance = canJump.second;
 
 		PrintUserCmdText(iTargetClientID, L"Beacon jump request accepted, charging...");
+		pub::Player::SendNNMessage(iTargetClientID, pub::GetNicknameId("nnv_beacon_request_accepted"));
 		PrintUserCmdText(iClientID, L"Beacon jump request accepted");
+		pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_beacon_request_accepted"));
 		return true;
 	}
 
@@ -1897,8 +1919,10 @@ namespace HyperJump
 
 		const wchar_t* charName = reinterpret_cast<const wchar_t*>(Players.GetActiveCharacterName(iClientID));
 		PrintUserCmdText(iClientID, L"Sent beacon jump request");
+		pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_beacon_request_sent"));
 		PrintUserCmdText(iTargetClientID, L"%ls has sent a beacon jump request", charName);
 		PrintUserCmdText(iTargetClientID, L"To accept, type /acceptbeacon %u or /acceptbeacon %ls", iClientID, charName);
+		pub::Player::SendNNMessage(iClientID, pub::GetNicknameId("nnv_beacon_request_received"));
 
 		mapBeaconJumpRequests[iClientID] = iTargetClientID;
 

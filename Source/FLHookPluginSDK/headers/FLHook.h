@@ -727,6 +727,10 @@ namespace PluginManager {
 	IMPORT HK_ERROR UnloadPlugin(const string &sShortName);
 	IMPORT void UnloadPlugins();
 }
+namespace Personalities
+{
+	IMPORT pub::AI::Personality GetPersonality(const string& pilotNickname);
+}
 
 // variables
 extern IMPORT std::map<string, list<PLUGIN_HOOKDATA>*> mpPluginHooks;

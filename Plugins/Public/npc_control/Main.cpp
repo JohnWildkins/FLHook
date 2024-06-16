@@ -25,6 +25,7 @@
 #include "Main.h"
 #include <sstream>
 #include <iostream>
+#include <random>
 
 #define RIGHT_CHECK(a) if(!(cmds->rights & a)) { cmds->Print(L"ERR No permission\n"); return; }
 static int set_iPluginDebug = 0;
@@ -44,9 +45,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 	{
 		if (set_scCfgFile.length() > 0)
 			LoadSettings();
+
+		HkLoadStringDLLs();
 	}
 	else if (fdwReason == DLL_PROCESS_DETACH)
 	{
+		HkUnloadStringDLLs();
 	}
 	return true;
 }
@@ -68,6 +72,10 @@ vector<uint> npcnames;
 unordered_set<uint> npcs;
 map<wstring, vector<uint>> npcsGroups;
 
+unordered_set<wstring> encountersToInit;
+unordered_set<uint> npcsToWatchDamage;
+unordered_set<uint> npcsToWatchEngagePlayers;
+
 int ailoot = 0;
 
 struct NPC_ARCHTYPESSTRUCT
@@ -78,6 +86,7 @@ struct NPC_ARCHTYPESSTRUCT
 	uint Infocard;
 	uint Infocard2;
 	int Graph;
+	string PilotNickname = "pilot_bh_ace";
 };
 
 struct NPC_FLEETSTRUCT
@@ -97,186 +106,14 @@ static map<wstring, NPC_ARCHTYPESSTRUCT> mapNPCArchtypes;
 static map<wstring, NPC_FLEETSTRUCT> mapNPCFleets;
 static map<wstring, COORDS> coordList;
 
-pub::AI::SetPersonalityParams HkMakePersonality(int graphid)
+pub::AI::SetPersonalityParams HkMakePersonality(int graphid, const std::string &pilotNickname)
 {
 
 	pub::AI::SetPersonalityParams p;
 	p.state_graph = pub::StateGraph::get_state_graph(listgraphs[graphid], pub::StateGraph::TYPE_STANDARD);
 	p.state_id = true;
 
-	p.personality.EvadeDodgeUse.evade_dodge_style_weight[0] = 0.4f;
-	p.personality.EvadeDodgeUse.evade_dodge_style_weight[1] = 0.0f;
-	p.personality.EvadeDodgeUse.evade_dodge_style_weight[2] = 0.4f;
-	p.personality.EvadeDodgeUse.evade_dodge_style_weight[3] = 0.2f;
-	p.personality.EvadeDodgeUse.evade_dodge_cone_angle = 1.5708f;
-	p.personality.EvadeDodgeUse.evade_dodge_interval_time = 10.0f;
-	p.personality.EvadeDodgeUse.evade_dodge_time = 1.0f;
-	p.personality.EvadeDodgeUse.evade_dodge_distance = 75.0f;
-	p.personality.EvadeDodgeUse.evade_activate_range = 100.0f;
-	p.personality.EvadeDodgeUse.evade_dodge_roll_angle = 1.5708f;
-	p.personality.EvadeDodgeUse.evade_dodge_waggle_axis_cone_angle = 1.5708f;
-	p.personality.EvadeDodgeUse.evade_dodge_slide_throttle = 1.0f;
-	p.personality.EvadeDodgeUse.evade_dodge_turn_throttle = 1.0f;
-	p.personality.EvadeDodgeUse.evade_dodge_corkscrew_roll_flip_direction = true;
-	p.personality.EvadeDodgeUse.evade_dodge_interval_time_variance_percent = 0.5f;
-	p.personality.EvadeDodgeUse.evade_dodge_cone_angle_variance_percent = 0.5f;
-	p.personality.EvadeDodgeUse.evade_dodge_direction_weight[0] = 0.25f;
-	p.personality.EvadeDodgeUse.evade_dodge_direction_weight[1] = 0.25f;
-	p.personality.EvadeDodgeUse.evade_dodge_direction_weight[2] = 0.25f;
-	p.personality.EvadeDodgeUse.evade_dodge_direction_weight[3] = 0.25f;
-
-	p.personality.EvadeBreakUse.evade_break_roll_throttle = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_time = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_interval_time = 10.0f;
-	p.personality.EvadeBreakUse.evade_break_afterburner_delay = 0.0f;
-	p.personality.EvadeBreakUse.evade_break_turn_throttle = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_direction_weight[0] = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_direction_weight[1] = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_direction_weight[2] = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_direction_weight[3] = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_style_weight[0] = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_style_weight[1] = 1.0f;
-	p.personality.EvadeBreakUse.evade_break_style_weight[2] = 1.0f;
-
-	p.personality.BuzzHeadTowardUse.buzz_min_distance_to_head_toward = 500.0f;
-	p.personality.BuzzHeadTowardUse.buzz_min_distance_to_head_toward_variance_percent = 0.25f;
-	p.personality.BuzzHeadTowardUse.buzz_max_time_to_head_away = 1.0f;
-	p.personality.BuzzHeadTowardUse.buzz_head_toward_engine_throttle = 1.0f;
-	p.personality.BuzzHeadTowardUse.buzz_head_toward_turn_throttle = 1.0f;
-	p.personality.BuzzHeadTowardUse.buzz_head_toward_roll_throttle = 1.0f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_turn_throttle = 1.0f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_cone_angle = 1.5708f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_cone_angle_variance_percent = 0.5f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_waggle_axis_cone_angle = 0.3491f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_roll_angle = 1.5708f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_interval_time = 10.0f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_interval_time_variance_percent = 0.5f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_direction_weight[0] = 0.25f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_direction_weight[1] = 0.25f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_direction_weight[2] = 0.25f;
-	p.personality.BuzzHeadTowardUse.buzz_dodge_direction_weight[3] = 0.25f;
-	p.personality.BuzzHeadTowardUse.buzz_head_toward_style_weight[0] = 0.33f;
-	p.personality.BuzzHeadTowardUse.buzz_head_toward_style_weight[1] = 0.33f;
-	p.personality.BuzzHeadTowardUse.buzz_head_toward_style_weight[2] = 0.33f;
-
-	p.personality.BuzzPassByUse.buzz_distance_to_pass_by = 1000.0f;
-	p.personality.BuzzPassByUse.buzz_pass_by_time = 1.0f;
-	p.personality.BuzzPassByUse.buzz_break_direction_cone_angle = 1.5708f;
-	p.personality.BuzzPassByUse.buzz_break_turn_throttle = 1.0f;
-	p.personality.BuzzPassByUse.buzz_drop_bomb_on_pass_by = true;
-	p.personality.BuzzPassByUse.buzz_break_direction_weight[0] = 1.0f;
-	p.personality.BuzzPassByUse.buzz_break_direction_weight[1] = 1.0f;
-	p.personality.BuzzPassByUse.buzz_break_direction_weight[2] = 1.0f;
-	p.personality.BuzzPassByUse.buzz_break_direction_weight[3] = 1.0f;
-	p.personality.BuzzPassByUse.buzz_pass_by_style_weight[2] = 1.0f;
-
-	p.personality.TrailUse.trail_lock_cone_angle = 0.0873f;
-	p.personality.TrailUse.trail_break_time = 0.5f;
-	p.personality.TrailUse.trail_min_no_lock_time = 0.1f;
-	p.personality.TrailUse.trail_break_roll_throttle = 1.0f;
-	p.personality.TrailUse.trail_break_afterburner = true;
-	p.personality.TrailUse.trail_max_turn_throttle = 1.0f;
-	p.personality.TrailUse.trail_distance = 100.0f;
-
-	p.personality.StrafeUse.strafe_run_away_distance = 100.0f;
-	p.personality.StrafeUse.strafe_attack_throttle = 1.0f;
-
-	p.personality.EngineKillUse.engine_kill_search_time = 0.0f;
-	p.personality.EngineKillUse.engine_kill_face_time = 1.0f;
-	p.personality.EngineKillUse.engine_kill_use_afterburner = true;
-	p.personality.EngineKillUse.engine_kill_afterburner_time = 2.0f;
-	p.personality.EngineKillUse.engine_kill_max_target_distance = 100.0f;
-
-	p.personality.RepairUse.use_shield_repair_pre_delay = 0.0f;
-	p.personality.RepairUse.use_shield_repair_post_delay = 1.0f;
-	p.personality.RepairUse.use_shield_repair_at_damage_percent = 0.2f;
-	p.personality.RepairUse.use_hull_repair_pre_delay = 0.0f;
-	p.personality.RepairUse.use_hull_repair_post_delay = 1.0f;
-	p.personality.RepairUse.use_hull_repair_at_damage_percent = 0.2f;
-
-	p.personality.GunUse.gun_fire_interval_time = 0.1f;
-	p.personality.GunUse.gun_fire_interval_variance_percent = 0.05f;
-	p.personality.GunUse.gun_fire_burst_interval_time = 15.0f;
-	p.personality.GunUse.gun_fire_burst_interval_variance_percent = 0.05f;
-	p.personality.GunUse.gun_fire_no_burst_interval_time = 1.0f;
-	p.personality.GunUse.gun_fire_accuracy_cone_angle = 0.00001f;
-	p.personality.GunUse.gun_fire_accuracy_power = 100.0f;
-	p.personality.GunUse.gun_range_threshold = 1.0f;
-	p.personality.GunUse.gun_target_point_switch_time = 0.0f;
-	p.personality.GunUse.fire_style = 0;
-	p.personality.GunUse.auto_turret_interval_time = 0.1f;
-	p.personality.GunUse.auto_turret_burst_interval_time = 15.0f;
-	p.personality.GunUse.auto_turret_no_burst_interval_time = 0.1f;
-	p.personality.GunUse.auto_turret_burst_interval_variance_percent = 0.1f;
-	p.personality.GunUse.gun_range_threshold_variance_percent = 1.0f;
-	p.personality.GunUse.gun_fire_accuracy_power_npc = 100.0f;
-
-	p.personality.MineUse.mine_launch_interval = 0.5f;
-	p.personality.MineUse.mine_launch_cone_angle = 0.7854f;
-	p.personality.MineUse.mine_launch_range = 200.0f;
-
-	p.personality.MissileUse.missile_launch_interval_time = 0.0f;
-	p.personality.MissileUse.missile_launch_interval_variance_percent = 0.5f;
-	p.personality.MissileUse.missile_launch_range = 800.0f;
-	p.personality.MissileUse.missile_launch_cone_angle = 0.01745f;
-	p.personality.MissileUse.missile_launch_allow_out_of_range = false;
-
-	p.personality.DamageReaction.evade_break_damage_trigger_percent = 1.0f;
-	p.personality.DamageReaction.evade_dodge_more_damage_trigger_percent = 0.25f;
-	p.personality.DamageReaction.engine_kill_face_damage_trigger_percent = 1.0f;
-	p.personality.DamageReaction.engine_kill_face_damage_trigger_time = 0.2f;
-	p.personality.DamageReaction.roll_damage_trigger_percent = 0.4f;
-	p.personality.DamageReaction.roll_damage_trigger_time = 0.2f;
-	p.personality.DamageReaction.afterburner_damage_trigger_percent = 0.2f;
-	p.personality.DamageReaction.afterburner_damage_trigger_time = 0.5f;
-	p.personality.DamageReaction.brake_reverse_damage_trigger_percent = 1.0f;
-	p.personality.DamageReaction.drop_mines_damage_trigger_percent = 0.25f;
-	p.personality.DamageReaction.drop_mines_damage_trigger_time = 0.1f;
-	p.personality.DamageReaction.fire_guns_damage_trigger_percent = 1.0f;
-	p.personality.DamageReaction.fire_guns_damage_trigger_time = 1.0f;
-	p.personality.DamageReaction.fire_missiles_damage_trigger_percent = 1.0f;
-	p.personality.DamageReaction.fire_missiles_damage_trigger_time = 1.0f;
-
-	p.personality.MissileReaction.evade_missile_distance = 800.0f;
-	p.personality.MissileReaction.evade_break_missile_reaction_time = 1.0f;
-	p.personality.MissileReaction.evade_slide_missile_reaction_time = 1.0f;
-	p.personality.MissileReaction.evade_afterburn_missile_reaction_time = 1.0f;
-
-	p.personality.CountermeasureUse.countermeasure_active_time = 5.0f;
-	p.personality.CountermeasureUse.countermeasure_unactive_time = 0.0f;
-
-	p.personality.FormationUse.force_attack_formation_active_time = 0.0f;
-	p.personality.FormationUse.force_attack_formation_unactive_time = 0.0f;
-	p.personality.FormationUse.break_formation_damage_trigger_percent = 0.01f;
-	p.personality.FormationUse.break_formation_damage_trigger_time = 1.0f;
-	p.personality.FormationUse.break_formation_missile_reaction_time = 1.0f;
-	p.personality.FormationUse.break_apart_formation_missile_reaction_time = 1.0f;
-	p.personality.FormationUse.break_apart_formation_on_evade_break = true;
-	p.personality.FormationUse.break_formation_on_evade_break_time = 1.0f;
-	p.personality.FormationUse.formation_exit_top_turn_break_away_throttle = 1.0f;
-	p.personality.FormationUse.formation_exit_roll_outrun_throttle = 1.0f;
-	p.personality.FormationUse.formation_exit_max_time = 5.0f;
-	p.personality.FormationUse.formation_exit_mode = 1;
-
-	p.personality.Job.wait_for_leader_target = false;
-	p.personality.Job.maximum_leader_target_distance = 3000;
-	p.personality.Job.flee_when_leader_flees_style = false;
-	p.personality.Job.scene_toughness_threshold = 4;
-	p.personality.Job.flee_scene_threat_style = 4;
-	p.personality.Job.flee_when_hull_damaged_percent = 0.01f;
-	p.personality.Job.flee_no_weapons_style = true;
-	p.personality.Job.loot_flee_threshold = 4;
-	p.personality.Job.attack_subtarget_order[0] = 5;
-	p.personality.Job.attack_subtarget_order[1] = 6;
-	p.personality.Job.attack_subtarget_order[2] = 7;
-	p.personality.Job.field_targeting = 3;
-	p.personality.Job.loot_preference = 7;
-	p.personality.Job.combat_drift_distance = 25000;
-	p.personality.Job.attack_order[0].distance = 5000;
-	p.personality.Job.attack_order[0].type = 11;
-	p.personality.Job.attack_order[0].flag = 15;
-	p.personality.Job.attack_order[1].type = 12;
-
+	p.personality = Personalities::GetPersonality(pilotNickname);
 	return p;
 }
 
@@ -389,8 +226,6 @@ void LoadSettings()
 //Functions
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-
 FILE* Logfile = fopen("./flhook_logs/npc_log.log", "at");
 
 void Logging(const char* szString, ...)
@@ -461,10 +296,8 @@ void __stdcall ShipDestroyed(IObjRW* iobj, bool isKill, uint killerId)
 	IsFLHookNPC(reinterpret_cast<CShip*>(iobj->cobj));
 }
 
-void CreateNPC(const wstring& name, Vector pos, Matrix& rot, uint iSystem, const wstring& groupName, const wstring& coordName)
+void CreateNPC(const NPC_ARCHTYPESSTRUCT& arch, Vector pos, Matrix& rot, uint iSystem, const wstring& groupName, const wstring& coordName)
 {
-	NPC_ARCHTYPESSTRUCT arch = mapNPCArchtypes[name];
-
 	if (coordList.count(coordName))
 	{
 		auto& coords = coordList.at(coordName);
@@ -472,7 +305,7 @@ void CreateNPC(const wstring& name, Vector pos, Matrix& rot, uint iSystem, const
 		pos.y = coords.pos.y + rand_FloatRange(-coords.spread, coords.spread);
 		pos.z = coords.pos.z + rand_FloatRange(-coords.spread, coords.spread);
 		rot = coords.ori;
-	
+
 	}
 	else
 	{
@@ -489,10 +322,10 @@ void CreateNPC(const wstring& name, Vector pos, Matrix& rot, uint iSystem, const
 	si.vPos = pos;
 	si.mOrientation = rot;
 	si.iLoadout = arch.Loadout;
-	si.iLook1 = CreateID("li_newscaster_head_gen_hat");
-	si.iLook2 = CreateID("pl_female1_journeyman_body");
-	si.iComm = CreateID("comm_br_darcy_female");
-	si.iPilotVoice = CreateID("pilot_f_leg_f01a");
+	si.iLook1 = CreateID("li_captain_head");
+	si.iLook2 = CreateID("li_male_guard_body");
+	si.iComm = CreateID("comm_ge_generic2");
+	si.iPilotVoice = CreateID("TLEADER_voice_m03");
 	si.iHealth = -1;
 	si.iLevel = 19;
 
@@ -507,13 +340,16 @@ void CreateNPC(const wstring& name, Vector pos, Matrix& rot, uint iSystem, const
 	// below shows the use of multiple part names.
 	FmtStr pilot_name(0, 0);
 	pilot_name.begin_mad_lib(16163); // ids of "%s0 %s1"
-	if (arch.Infocard != 0) {
+	if (arch.Infocard != 0)
+	{
 		pilot_name.append_string(arch.Infocard);
-		if (arch.Infocard2 != 0) {
+		if (arch.Infocard2 != 0)
+		{
 			pilot_name.append_string(arch.Infocard2);
 		}
 	}
-	else {
+	else
+	{
 		pilot_name.append_string(rand_name());  // ids that replaces %s0
 		pilot_name.append_string(rand_name()); // ids that replaces %s1
 	}
@@ -526,7 +362,7 @@ void CreateNPC(const wstring& name, Vector pos, Matrix& rot, uint iSystem, const
 
 	pub::SpaceObj::Create(iSpaceObj, si);
 
-	pub::AI::SetPersonalityParams pers = HkMakePersonality(arch.Graph);
+	pub::AI::SetPersonalityParams pers = HkMakePersonality(arch.Graph, arch.PilotNickname);
 	pub::AI::SubmitState(iSpaceObj, &pers);
 
 	npcs.insert(iSpaceObj);
@@ -535,9 +371,132 @@ void CreateNPC(const wstring& name, Vector pos, Matrix& rot, uint iSystem, const
 	return;
 }
 
+void CreateNPC(const wstring& name, Vector pos, Matrix& rot, uint iSystem, const wstring& groupName, const wstring& coordName)
+{
+	NPC_ARCHTYPESSTRUCT arch = mapNPCArchtypes[name];
+	CreateNPC(arch, pos, rot, iSystem, groupName, coordName);
+	return;
+}
+
+void ShowPlayerMissionText(uint iClientID, const wstring& text)
+{
+	HkChangeIDSString(iClientID, 526999, text);
+
+	FmtStr caption(0, 0);
+	caption.begin_mad_lib(526999);
+	caption.end_mad_lib();
+
+	pub::Player::DisplayMissionMessage(iClientID, caption, MissionMessageType::MissionMessageType_Type2, true);
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Client command processing
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void AdminCmd_EncounterTest(CCmds* cmds)
+{
+	cmds->Print(L"OK\n");
+	uint spawningPlayer = HkGetClientIdFromCharname(cmds->GetAdminName());
+
+	uint iShip1;
+	pub::Player::GetShip(spawningPlayer, iShip1);
+	if (!iShip1)
+		return;
+
+	uint iSystem;
+	pub::Player::GetSystem(spawningPlayer, iSystem);
+
+	Vector pos = { 20000, 0, -20000 };
+	Matrix rot = EulerMatrix({ 0, 0, 0 });
+
+	NPC_ARCHTYPESSTRUCT linerStruct;
+
+	linerStruct.Shiparch = CreateID("dsy_prison");
+	linerStruct.Loadout = CreateID("prison_liner_li");
+	linerStruct.PilotNickname = "gunboat_default";
+
+	// IFF calc
+	pub::Reputation::GetReputationGroup(linerStruct.IFF, "li_p_grp");
+
+	// Selected graph
+	linerStruct.Graph = 2;
+
+	// Infocard
+	linerStruct.Infocard = 196977;
+
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<unsigned int> distr(202608, 202647);
+	
+	linerStruct.Infocard2 = distr(gen);
+
+	CreateNPC(linerStruct, pos, rot, iSystem, L"encounter_liner", L"");
+
+	Vector rogue_pos = { 15000, 0, -20000 };
+	Matrix rogue_rot = EulerMatrix({ 0, 0, 0 });
+
+	std::uniform_int_distribution<unsigned int> distr2(227308, 227410);
+	std::uniform_int_distribution<unsigned int> distr3(227708, 228007);
+
+	for (int i = 0; i < 4; i++)
+	{
+		NPC_ARCHTYPESSTRUCT rogueStruct;
+		rogueStruct.Shiparch = CreateID("dsy_kadesh_hf");
+		rogueStruct.Loadout = CreateID("gd_z_hf_mid_l1_d10_d13");
+
+		pub::Reputation::GetReputationGroup(rogueStruct.IFF, "fc_pirate");
+
+		rogueStruct.Graph = 0;
+		rogueStruct.PilotNickname = "pilot_lrogue_hard";
+
+		rogueStruct.Infocard = distr2(gen);
+		rogueStruct.Infocard2 = distr3(gen);
+
+		CreateNPC(rogueStruct, rogue_pos, rogue_rot, iSystem, L"encounter_rogues", L"");
+	}
+
+	for (int i = 0; i < 2; i++)
+	{
+		NPC_ARCHTYPESSTRUCT rogueStruct;
+		rogueStruct.Shiparch = CreateID("dsy_zon_vhf");
+		rogueStruct.Loadout = CreateID("gd_z_zonervhf_elite_l1_d19");
+
+		pub::Reputation::GetReputationGroup(rogueStruct.IFF, "fc_pirate");
+
+		rogueStruct.Graph = 0;
+		rogueStruct.PilotNickname = "pilot_lrogue_ace";
+
+		rogueStruct.Infocard = distr2(gen);
+		rogueStruct.Infocard2 = distr3(gen);
+
+		CreateNPC(rogueStruct, rogue_pos, rogue_rot, iSystem, L"encounter_rogues", L"");
+	}
+
+	uint linerID;
+	const auto& liner = npcsGroups.at(L"encounter_liner");
+	for (uint npc : liner)
+	{
+		linerID = npc;
+	}
+
+	const auto& rogues = npcsGroups.at(L"encounter_rogues");
+	for (uint npc : rogues)
+	{
+		pub::AI::DirectiveCancelOp cancelOP;
+		pub::AI::SubmitDirective(npc, &cancelOP);
+
+		pub::AI::DirectiveGotoOp go;
+		go.iGotoType = 0;
+		go.goto_cruise = true;
+		go.iTargetID = linerID;
+		go.fRange = 1000;
+		pub::AI::SubmitDirective(npc, &go);
+	}
+
+	encountersToInit.insert(L"encounter_liner");
+
+	return;
+}
 
 void AdminCmd_AIMake(CCmds* cmds, int Amount, const wstring& NpcType, const wstring& groupName, const wstring& coordName)
 {
@@ -1078,8 +1037,235 @@ bool ExecuteCommandString_Callback(CCmds* cmds, const wstring& wscCmd)
 		AdminCmd_ClearCoords(cmds, cmds->ArgStr(1));
 		return true;
 	}
+	else if (IS_CMD("encountertest"))
+	{
+		returncode = SKIPPLUGINS_NOFUNCTIONCALL;
+		AdminCmd_EncounterTest(cmds);
+		return true;
+	}
 	return false;
 }
+
+
+void HkTimerCheckKick()
+{
+	if (encountersToInit.size() > 0)
+	{
+
+		for (auto& test : encountersToInit)
+		{
+			const auto& liner = npcsGroups.at(test);
+			uint linerID = 0;
+			for (uint npc : liner)
+			{
+				pub::AI::DirectiveCancelOp cancelOP;
+				pub::AI::SubmitDirective(npc, &cancelOP);
+
+				pub::AI::DirectiveGotoOp go;
+				go.iGotoType = 0;
+				go.goto_no_cruise = true;
+				go.fThrust = 50;
+				go.iTargetID = CreateID("LI09_to_Li01");
+				go.fRange = 0;
+				pub::AI::SubmitDirective(npc, &go);
+				linerID = npc;
+			}
+			PlayerData* pd = nullptr;
+
+			CShip* TheLiner = (CShip*)CObject::Find(linerID, CObject::CSHIP_OBJECT);
+			TheLiner->Release();
+
+			uint spawningPlayer = 0;
+
+			while (pd = Players.traverse_active(pd))
+			{
+				CShip* cship = ClientInfo[pd->iOnlineID].cship;
+				if (!cship)
+				{
+					continue;
+				}
+				if (cship->system != TheLiner->system)
+				{
+					continue;
+				}
+				if (HkDistance3D(cship->vPos, TheLiner->vPos) >= 10000)
+				{
+					continue;
+				}
+				else
+				{
+					spawningPlayer = HkGetClientIdFromPD(pd);
+					break;
+				}
+			}
+
+			if (!spawningPlayer)
+			{
+				return;
+			}
+
+			int rep;
+			int liner_rep;
+			uint linerIFF;
+			float attitude;
+			pub::Player::GetRep(spawningPlayer, rep);
+			pub::SpaceObj::GetRep(linerID, liner_rep);
+			Reputation::Vibe::GetAffiliation(liner_rep, linerIFF, false);
+			Reputation::Vibe::GetGroupFeelingsTowards(rep, TheLiner->get_vibe(), attitude);
+
+			if (attitude < -0.55f)
+			{
+				wstring missionText = L"Destroy the Prison Liner!";
+				ShowPlayerMissionText(spawningPlayer, missionText);
+
+				uint voiceHash = CreateID("TLEADER_voice_m03");
+				uint lineHash = CreateID("DX_M03_0660_TRANSPORT_LEADER");
+
+				PlayerData* pd = nullptr;
+
+				while (pd = Players.traverse_active(pd))
+				{
+					CShip* cship = ClientInfo[pd->iOnlineID].cship;
+					if (!cship)
+					{
+						continue;
+					}
+					if (cship->system != TheLiner->system)
+					{
+						continue;
+					}
+					if (HkDistance3D(cship->vPos, TheLiner->vPos) >= 10000)
+					{
+						continue;
+					}
+					pub::SpaceObj::SendComm(linerID, cship->id, voiceHash, nullptr, 0, &lineHash, 9, 0, 0.0, true);
+				}
+
+				npcsToWatchEngagePlayers.insert(linerID);
+			}
+			else
+			{
+				uint voiceHash = CreateID("TLEADER_voice_m03");
+				uint lineHash = CreateID("DX_M03_0664_TRANSPORT_LEADER");
+
+				PlayerData* pd = nullptr;
+
+				while (pd = Players.traverse_active(pd))
+				{
+					CShip* cship = ClientInfo[pd->iOnlineID].cship;
+					if (!cship)
+					{
+						continue;
+					}
+					if (cship->system != TheLiner->system)
+					{
+						continue;
+					}
+					if (HkDistance3D(cship->vPos, TheLiner->vPos) >= 15000)
+					{
+						continue;
+					}
+					pub::SpaceObj::SendComm(linerID, cship->id, voiceHash, nullptr, 0, &lineHash, 9, 0, 0.0, false);
+				}
+
+				wstring missionText = L"Rescue the Prison Liner!";
+				ShowPlayerMissionText(spawningPlayer, missionText);
+			}
+
+			npcsToWatchDamage.insert(linerID);
+		}
+
+		encountersToInit.clear();
+	}
+
+	if (npcsToWatchEngagePlayers.size() > 0)
+	{
+		for (auto& npc : npcsToWatchEngagePlayers)
+		{
+			CShip* TheLiner = (CShip*)CObject::Find(npc, CObject::CSHIP_OBJECT);
+			TheLiner->Release();
+
+			PlayerData* pd = nullptr;
+
+			int rep;
+			int liner_rep;
+			uint linerIFF;
+			float attitude;
+			pub::SpaceObj::GetRep(TheLiner->id, liner_rep);
+			Reputation::Vibe::GetAffiliation(liner_rep, linerIFF, false);
+			uint TheBadGuy = 0;
+
+			while (pd = Players.traverse_active(pd))
+			{
+				CShip* cship = ClientInfo[pd->iOnlineID].cship;
+				pub::Player::GetRep(pd->iOnlineID, rep);
+				Reputation::Vibe::GetGroupFeelingsTowards(rep, TheLiner->get_vibe(), attitude);
+				if (!cship)
+				{
+					continue;
+				}
+				if (cship->system != TheLiner->system)
+				{
+					continue;
+				}
+				if (HkDistance3D(cship->vPos, TheLiner->vPos) >= 3000)
+				{
+					continue;
+				}
+				if (attitude >= -0.55f)
+				{
+					continue;
+				}
+				uint voiceHash = CreateID("TLEADER_voice_m03");
+				uint lineHash = CreateID("DX_M03_0666_TRANSPORT_LEADER");
+
+				pub::SpaceObj::SendComm(TheLiner->id, cship->id, voiceHash, nullptr, 0, &lineHash, 9, 0, 0.0, true);
+			}
+
+			npcsToWatchEngagePlayers.erase(npc);
+		}
+	}
+
+	if (npcsToWatchDamage.size() > 0)
+	{
+		for (auto& npc : npcsToWatchDamage)
+		{
+			CShip* TheLiner = (CShip*)CObject::Find(npc, CObject::CSHIP_OBJECT);
+			TheLiner->Release();
+
+			if (TheLiner->get_hit_pts() / TheLiner->get_max_hit_pts() < 0.5f)
+			{
+				uint voiceHash = CreateID("TLEADER_voice_m03");
+				uint lineHash = CreateID("DX_M03_0671_TRANSPORT_LEADER");
+
+				PlayerData* pd = nullptr;
+
+				while (pd = Players.traverse_active(pd))
+				{
+					CShip* cship = ClientInfo[pd->iOnlineID].cship;
+					if (!cship)
+					{
+						continue;
+					}
+					if (cship->system != TheLiner->system)
+					{
+						continue;
+					}
+					if (HkDistance3D(cship->vPos, TheLiner->vPos) >= 15000)
+					{
+						continue;
+					}
+					pub::SpaceObj::SendComm(TheLiner->id, cship->id, voiceHash, nullptr, 0, &lineHash, 9, 0, 0.0, false);
+				}
+
+				npcsToWatchDamage.erase(npc);
+			}
+		}
+	}
+
+	return;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Functions to hook
@@ -1097,6 +1283,7 @@ EXPORT PLUGIN_INFO* Get_PluginInfo()
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ExecuteCommandString_Callback, PLUGIN_ExecuteCommandString_Callback, 0));
 	//p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&UserCmd_Process, PLUGIN_UserCmd_Process, 0));
 	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&ShipDestroyed, PLUGIN_ShipDestroyed, 0));
+	p_PI->lstHooks.push_back(PLUGIN_HOOKINFO((FARPROC*)&HkTimerCheckKick, PLUGIN_HkTimerCheckKick, 0));
 
 	return p_PI;
 }

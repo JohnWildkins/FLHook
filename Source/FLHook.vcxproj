@@ -116,6 +116,7 @@ copy /Y  $(OutDir)$(TargetName).lib  $(SolutionDir)\Source\FLHookPluginSDK\libs\
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <LanguageStandard>stdcpp14</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)\Dependencies\boost;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>Ws2_32.lib;psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -157,6 +158,7 @@ copy /Y  $(OutDir)$(TargetName).lib  $(SolutionDir)\Source\FLHookPluginSDK\libs\
       <ObjectFileName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename)1.obj</ObjectFileName>
     </ClCompile>
     <ClCompile Include="FLHook\HkDataBaseMarket.cpp" />
+    <ClCompile Include="FLHook\PilotPersonalities.cpp" />
     <ClCompile Include="FLHook\wildcards.cpp" />
     <ClCompile Include="FLHook\CCmds.cpp" />
     <ClCompile Include="FLHook\CConsole.cpp" />

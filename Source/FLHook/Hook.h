@@ -687,6 +687,11 @@ namespace PluginManager {
 	EXPORT void UnloadPlugins();
 }
 
+namespace Personalities
+{
+	EXPORT pub::AI::Personality GetPersonality(const string& pilotNickname);
+}
+
 EXPORT void Plugin_Communication(PLUGIN_MESSAGE msgtype, void* msg);
 
 // HkInit
@@ -867,6 +872,11 @@ namespace HkIServerImpl
 	EXPORT extern bool g_bInSubmitChat;
 	EXPORT extern uint g_iTextLen;
 	extern HOOKENTRY hookEntries[85];
+}
+
+namespace Personalities
+{
+	void LoadPersonalities();
 }
 
 // HkDataBaseMarket

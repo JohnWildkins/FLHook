@@ -337,6 +337,8 @@ void FLHookInit_Pre()
 			}
 		}
 
+		Personalities::LoadPersonalities();
+
 		PatchClientImpl();
 
 #ifdef EXTENDED_EXCEPTION_LOGGING
